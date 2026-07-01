@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.medecode.editor.CodeEditor
 import com.medecode.model.EditorFile
 import com.medecode.ui.FileBrowser
+import com.medecode.ui.Sidebar
 import com.medecode.ui.theme.MedecodeTheme
 
 class MainActivity : ComponentActivity() {
@@ -51,6 +52,8 @@ fun MedecodeApp() {
     var activeFileIndex by remember { mutableIntStateOf(-1) }
     var showFileBrowser by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var projectPath by remember { mutableStateOf("") }
+    var showSidebar by remember { mutableStateOf(false) }
     
     // Get active file
     val activeFile = remember(openFiles, activeFileIndex) {
@@ -105,8 +108,37 @@ fun MedecodeApp() {
         }
     }
     
-    Scaffold(
-        topBar = {
+    Row(modifier = Modifier.fillMaxSize()) {
+        // Sidebar (optional, shown when project is open)
+        if (showSidebar && projectPath.isNotEmpty()) {
+            Sidebar(
+                projectPath = projectPath,
+                onFileSelected = { path, name ->
+                    try {
+                        java.io.File(path).takeIf { it.exists() }?.readText()?.let { fileContent ->
+                            openFile(name, path, fileContent)
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("Medecode", "Error reading file", e)
+                    }
+                },
+                onProjectPathChange = { newPath ->
+                    projectPath = newPath
+                    if (newPath.isEmpty()) {
+                        showSidebar = false
+                    }
+                },
+                modifier = Modifier.weight(0f)
+            )
+        }
+        
+        // Main content area
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxSize()
+        ) {
+            // Top app bar
             TopAppBar(
                 title = { 
                     Text(
@@ -116,8 +148,24 @@ fun MedecodeApp() {
                     )
                 },
                 actions = {
-                    IconButton(onClick = { showFileBrowser = true }) {
-                        Icon(Icons.Default.FolderOpen, "文件浏览器")
+                    IconButton(onClick = { showSidebar = !showSidebar }) {
+                        Icon(
+                            Icons.Default.Menu,
+                            if (showSidebar) "隐藏侧边栏" else "显示侧边栏"
+                        )
+                    }
+                    IconButton(onClick = { 
+                        if (projectPath.isEmpty()) {
+                            showFileBrowser = true
+                        } else {
+                            projectPath = ""
+                            showSidebar = false
+                        }
+                    }) {
+                        Icon(
+                            Icons.Default.FolderOpen,
+                            if (projectPath.isNotEmpty()) "切换项目" else "打开项目"
+                        )
                     }
                     IconButton(onClick = { fileLauncher.launch(arrayOf("text/*")) }) {
                         Icon(Icons.Default.OpenInNew, "打开文件")
@@ -130,59 +178,54 @@ fun MedecodeApp() {
                     }
                 }
             )
-        }
-    ) { paddingValues ->
-        if (openFiles.isEmpty()) {
-            // Welcome screen
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(32.dp)
+            
+            // Content
+            if (openFiles.isEmpty()) {
+                // Welcome screen
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "Medecode",
-                        style = MaterialTheme.typography.displayLarge
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Android 代码编辑器",
-                        style = MaterialTheme.typography.headlineMedium
-                    )
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Button(
-                        onClick = { showFileBrowser = true },
-                        modifier = Modifier.fillMaxWidth(0.6f)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(32.dp)
                     ) {
-                        Icon(Icons.Default.FolderOpen, "打开文件", modifier = Modifier.padding(end = 8.dp))
-                        Text("文件浏览器")
+                        Text(
+                            text = "Medecode",
+                            style = MaterialTheme.typography.displayLarge
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Android 代码编辑器",
+                            style = MaterialTheme.typography.headlineMedium
+                        )
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Button(
+                            onClick = { showFileBrowser = true },
+                            modifier = Modifier.fillMaxWidth(0.6f)
+                        ) {
+                            Icon(Icons.Default.FolderOpen, "打开项目", modifier = Modifier.padding(end = 8.dp))
+                            Text("打开项目")
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = { fileLauncher.launch(arrayOf("text/*")) },
+                            modifier = Modifier.fillMaxWidth(0.6f)
+                        ) {
+                            Icon(Icons.Default.OpenInNew, "打开文件", modifier = Modifier.padding(end = 8.dp))
+                            Text("打开文件")
+                        }
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Text(
+                            text = "支持 Python、JavaScript、Java、Kotlin、C/C++、Go、Rust 等多种语言",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = { fileLauncher.launch(arrayOf("text/*")) },
-                        modifier = Modifier.fillMaxWidth(0.6f)
-                    ) {
-                        Icon(Icons.Default.OpenInNew, "打开文件", modifier = Modifier.padding(end = 8.dp))
-                        Text("打开文件")
-                    }
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Text(
-                        text = "支持 Python、JavaScript、Java、Kotlin、C/C++、Go、Rust 等多种语言",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
+            } else {
                 // Tab row for open files
                 if (openFiles.size > 1) {
                     TabRow(
@@ -234,14 +277,19 @@ fun MedecodeApp() {
     if (showFileBrowser) {
         FileBrowser(
             onFileSelected = { path, name ->
-                // Read file content and open it
-                try {
-                    val content = android.util.Log.d("Medecode", "Reading: $path")
-                    java.io.File(path).takeIf { it.exists() }?.readText()?.let { fileContent ->
-                        openFile(name, path, fileContent)
+                // If it's a directory, set as project path
+                val file = java.io.File(path)
+                if (file.isDirectory) {
+                    projectPath = path
+                    showSidebar = true
+                } else {
+                    try {
+                        file.takeIf { it.exists() }?.readText()?.let { fileContent ->
+                            openFile(name, path, fileContent)
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("Medecode", "Error reading file", e)
                     }
-                } catch (e: Exception) {
-                    android.util.Log.e("Medecode", "Error reading file", e)
                 }
             },
             onDismiss = { showFileBrowser = false }
