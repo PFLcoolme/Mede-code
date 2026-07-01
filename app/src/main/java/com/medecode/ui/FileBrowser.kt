@@ -16,6 +16,12 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /**
+ * Safe root path for file browsing on Android.
+ * Apps cannot read the system root `/` due to SELinux, so we start from public Download.
+ */
+private const val DEFAULT_ROOT_PATH = "/sdcard/Download"
+
+/**
  * File browser state management
  */
 data class FileBrowserState(
@@ -44,16 +50,14 @@ fun rememberFileBrowser(): FileBrowserState {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FileBrowser(
-    initialPath: String = "/",
+    initialPath: String = DEFAULT_ROOT_PATH,
     onFileSelected: (String, String) -> Unit, // path, name
     onFolderSelected: (String) -> Unit, // path
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var state by remember { mutableStateOf(FileBrowserState(currentPath = initialPath)) }
-    var showOptions by remember { mutableStateOf(false) }
-    var selectedFile: FileInfo? by remember { mutableStateOf(null) }
-    
+
     LaunchedEffect(state.currentPath) {
         state = state.copy(isLoading = true, error = null)
         val loadResult = loadDirectory(state.currentPath)
@@ -73,12 +77,19 @@ fun FileBrowser(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("文件浏览器")
-                IconButton(onClick = {
-                    if (state.currentPath != "/") {
-                        state = state.copy(currentPath = File(state.currentPath).parent ?: "/")
+                Row {
+                    TextButton(onClick = {
+                        onFolderSelected(state.currentPath)
+                        onDismiss()
+                    }) {
+                        Text("选择目录")
                     }
-                }) {
-                    Icon(Icons.Default.ArrowBack, "返回上级")
+                    IconButton(onClick = {
+                        val parent = File(state.currentPath).parent
+                        state = state.copy(currentPath = if (parent.isNullOrBlank() || parent == "/") DEFAULT_ROOT_PATH else parent)
+                    }) {
+                        Icon(Icons.Default.ArrowBack, "返回上级")
+                    }
                 }
             }
         },
@@ -112,17 +123,18 @@ fun FileBrowser(
                     LazyColumn(
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        // Parent directory entry (if not root)
-                        if (state.currentPath != "/") {
+                        // Parent directory entry (if not at safe root)
+                        if (state.currentPath != DEFAULT_ROOT_PATH) {
                             item {
                                 FileInfoRow(
                                     info = FileInfo(
                                         name = "..",
-                                        path = File(state.currentPath).parent ?: "/",
+                                        path = File(state.currentPath).parent ?: DEFAULT_ROOT_PATH,
                                         isDirectory = true
                                     ),
                                     onClick = {
-                                        state = state.copy(currentPath = File(state.currentPath).parent ?: "/")
+                                        val parent = File(state.currentPath).parent
+                                        state = state.copy(currentPath = if (parent.isNullOrBlank() || parent == "/") DEFAULT_ROOT_PATH else parent)
                                     }
                                 )
                             }
@@ -135,8 +147,10 @@ fun FileBrowser(
                                     if (file.isDirectory) {
                                         state = state.copy(currentPath = file.path)
                                     } else {
-                                        selectedFile = file
-                                        showOptions = true
+                                        readFileSync(file.path)?.let { content ->
+                                            onFileSelected(file.path, file.name)
+                                            onDismiss()
+                                        }
                                     }
                                 }
                             )
@@ -151,50 +165,6 @@ fun FileBrowser(
             }
         }
     )
-    
-    // File options dialog
-    if (showOptions && selectedFile != null) {
-        AlertDialog(
-            onDismissRequest = { 
-                showOptions = false
-                selectedFile = null
-            },
-            title = { Text("选择操作") },
-            text = {
-                Column {
-                    Text("文件: ${selectedFile!!.name}")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "路径: ${selectedFile!!.path}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    selectedFile?.let { file ->
-                        val content = readFileSync(file.path)
-                        if (content != null) {
-                            onFileSelected(file.path, file.name)
-                        }
-                        showOptions = false
-                        selectedFile = null
-                    }
-                }) {
-                    Text("在编辑器中打开")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showOptions = false
-                    selectedFile = null
-                }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
 }
 
 @Composable

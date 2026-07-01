@@ -1,7 +1,6 @@
 package com.medecode.editor
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -9,7 +8,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,7 +18,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -31,9 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.medecode.model.EditorFile
 
-/**
- * A composable for editing code with line numbers and syntax support
- */
 @Composable
 fun CodeEditor(
     editorFile: EditorFile,
@@ -41,28 +36,21 @@ fun CodeEditor(
     modifier: Modifier = Modifier
 ) {
     val darkTheme = isSystemInDarkTheme()
-    
-    // Editor state
-    var textFieldValue by remember { 
-        mutableStateOf(TextFieldValue(text = editorFile.content, selection = TextRange(editorFile.content.length))) 
+
+    var textFieldValue by remember {
+        mutableStateOf(TextFieldValue(text = editorFile.content, selection = TextRange(editorFile.content.length)))
     }
-    
-    // Scroll states
+
     val verticalScrollState = rememberScrollState()
     val horizontalScrollState = rememberScrollState()
-    
-    // Font settings
     val fontSize = remember { mutableIntStateOf(14) }
     val fontFamily = FontFamily.Monospace
-    
-    // Tab settings
     val tabSize = 4
-    
-    // Colors based on theme
+
     val editorColors = if (darkTheme) {
         EditorColors(
             background = Color(0xFF1E1E1E),
-            lineNumbersBg = Color(0xFF252526),
+            lineNumbersBg = Color(0x80252526),
             lineNumbersText = Color(0xFF858585),
             currentLine = Color(0xFF2A2D2E),
             text = Color(0xFFD4D4D4),
@@ -74,7 +62,7 @@ fun CodeEditor(
     } else {
         EditorColors(
             background = Color(0xFFFFFBF3),
-            lineNumbersBg = Color(0xFFF0F0F0),
+            lineNumbersBg = Color(0x80F0F0F0),
             lineNumbersText = Color(0xFF9E9E9E),
             currentLine = Color(0xFFF5F5DC),
             text = Color(0xFF333333),
@@ -84,16 +72,18 @@ fun CodeEditor(
             bracketMatch = Color(0xFFE8E8E8)
         )
     }
-    
-    // Calculate line count
+
     val lineCount = remember(textFieldValue.text) {
         textFieldValue.text.count { it == '\n' } + 1
     }
-    
-    // Keyboard handling
+
+    // 语法高亮
+    val highlightedText = remember(textFieldValue.text, editorFile.language) {
+        SyntaxHighlight.highlightCode(textFieldValue.text, editorFile.language)
+    }
+
     val onKeyDown: (androidx.compose.ui.input.key.KeyEvent) -> Boolean = { keyEvent ->
         when {
-            // Tab key handling
             keyEvent.key == Key.Tab && keyEvent.type == KeyEventType.KeyDown -> {
                 val newText = buildString {
                     append(textFieldValue.text.substring(0, textFieldValue.selection.start))
@@ -101,62 +91,37 @@ fun CodeEditor(
                     append(textFieldValue.text.substring(textFieldValue.selection.end))
                 }
                 val newCursorPos = textFieldValue.selection.start + tabSize
-                textFieldValue = TextFieldValue(
-                    text = newText,
-                    selection = TextRange(newCursorPos)
-                )
+                textFieldValue = TextFieldValue(text = newText, selection = TextRange(newCursorPos))
                 onContentChange(newText)
                 true
             }
-            
-            // Enter key handling - auto indent
             keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyDown -> {
                 val cursorPos = textFieldValue.selection.start
                 val text = textFieldValue.text
-                
-                // Find the current line
                 val lineStart = text.lastIndexOf('\n', cursorPos - 1) + 1
                 val lineEnd = text.indexOf('\n', cursorPos)
                 val actualLineEnd = if (lineEnd == -1) text.length else lineEnd
                 val currentLine = text.substring(lineStart, actualLineEnd)
-                
-                // Calculate indentation
                 val indent = currentLine.takeWhile { it == ' ' || it == '\t' }.toString()
-                
-                // Check if we need extra indent (after { or :)
                 val trimmedLine = currentLine.trimEnd()
-                val extraIndent = if (trimmedLine.endsWith('{') || trimmedLine.endsWith(':')) {
-                    "    "
-                } else {
-                    ""
-                }
-                
-                // Check if we need to reduce indent (before })
+                val extraIndent = if (trimmedLine.endsWith('{') || trimmedLine.endsWith(':')) "    " else ""
                 val nextLineText = text.substring(actualLineEnd).trimStart()
                 val hasReduceIndent = nextLineText.startsWith('}')
-                
                 val newIndent = when {
                     hasReduceIndent && indent.length >= 4 -> indent.substring(4)
                     extraIndent.isNotEmpty() -> indent + extraIndent
                     else -> indent
                 }
-                
                 val newText = buildString {
                     append(text.substring(0, cursorPos))
                     append("\n$newIndent")
                     append(text.substring(cursorPos))
                 }
-                
                 val newCursorPos = cursorPos + 1 + newIndent.length
-                textFieldValue = TextFieldValue(
-                    text = newText,
-                    selection = TextRange(newCursorPos)
-                )
+                textFieldValue = TextFieldValue(text = newText, selection = TextRange(newCursorPos))
                 onContentChange(newText)
                 true
             }
-            
-            // Auto-close brackets and quotes
             keyEvent.type == KeyEventType.KeyDown -> {
                 val keyChar = keyEvent.nativeKeyEvent.unicodeChar.toChar().toString()
                 val pairing = when {
@@ -167,7 +132,6 @@ fun CodeEditor(
                     keyChar == "'" || keyChar == "Apostrophe" -> "'" to "'"
                     else -> null
                 }
-                
                 pairing?.let { (open, close) ->
                     val newText = buildString {
                         append(textFieldValue.text.substring(0, textFieldValue.selection.start))
@@ -176,37 +140,29 @@ fun CodeEditor(
                         append(textFieldValue.text.substring(textFieldValue.selection.end))
                     }
                     val newCursorPos = textFieldValue.selection.start + 1
-                    textFieldValue = TextFieldValue(
-                        text = newText,
-                        selection = TextRange(newCursorPos)
-                    )
+                    textFieldValue = TextFieldValue(text = newText, selection = TextRange(newCursorPos))
                     onContentChange(newText)
                     true
                 } ?: false
             }
-            
             else -> false
         }
     }
-    
+
     Column(modifier = modifier) {
-        // Editor area
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-        ) {
-            // Line numbers gutter
+        Row(modifier = Modifier.fillMaxSize()) {
+            // 行号栏 - 更窄 + 毛玻璃背景
             LineNumbersColumn(
                 lineCount = lineCount,
                 scrollState = verticalScrollState,
                 colors = editorColors,
                 fontSize = fontSize.intValue,
                 modifier = Modifier
-                    .width(48.dp)
+                    .width(32.dp)
                     .background(editorColors.lineNumbersBg)
             )
-            
-            // Code editing area
+
+            // 代码编辑区
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -231,6 +187,14 @@ fun CodeEditor(
                         lineHeight = (fontSize.intValue * 1.5).sp,
                         textAlign = TextAlign.Left
                     ),
+                    visualTransformation = { text ->
+                        // 使用语法高亮的 AnnotatedString
+                        val annotated = SyntaxHighlight.highlightCode(text.text, editorFile.language)
+                        androidx.compose.ui.text.input.TransformedText(
+                            annotated,
+                            androidx.compose.ui.text.input.OffsetMapping.Identity
+                        )
+                    },
                     cursorBrush = SolidColor(editorColors.text),
                     keyboardOptions = KeyboardOptions(
                         autoCorrect = false,
@@ -256,23 +220,20 @@ private fun LineNumbersColumn(
         horizontalAlignment = Alignment.End
     ) {
         for (lineNum in 1..lineCount) {
-            Text(
+            androidx.compose.material3.Text(
                 text = lineNum.toString(),
                 color = colors.lineNumbersText,
-                fontSize = fontSize.sp,
+                fontSize = (fontSize - 2).sp,
                 fontFamily = FontFamily.Monospace,
                 textAlign = TextAlign.End,
                 modifier = Modifier
-                    .padding(end = 8.dp)
-                    .height(20.dp)
+                    .padding(end = 4.dp)
+                    .height((fontSize * 1.5).dp)
             )
         }
     }
 }
 
-/**
- * Editor colors for light and dark themes
- */
 data class EditorColors(
     val background: Color,
     val lineNumbersBg: Color,
