@@ -3,21 +3,39 @@ package com.medecode
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.tab.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.medecode.editor.CodeEditor
 import com.medecode.model.EditorFile
 import com.medecode.ui.*
@@ -28,6 +46,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        // 全屏显示，隐藏状态栏
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN
         
         setContent {
             MedecodeTheme {
@@ -42,10 +63,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MedecodeApp() {
     val darkTheme = isSystemInDarkTheme()
+    val configuration = LocalConfiguration.current
+    val isPortrait = configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
     
     // State for open files
     var openFiles by remember { mutableStateOf<List<EditorFile>>(emptyList()) }
@@ -53,19 +76,20 @@ fun MedecodeApp() {
     var showFileBrowser by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var projectPath by remember { mutableStateOf("") }
-    var showSidebar by remember { mutableStateOf(false) }
+    
+    // 侧边栏使用 Drawer 样式
+    var sidebarOpen by remember { mutableStateOf(false) }
     
     // New features state
     var showSearchReplace by remember { mutableStateOf(false) }
     var showRecentFiles by remember { mutableStateOf(false) }
     var showCommandPalette by remember { mutableStateOf(false) }
     
+    // 长按搜索状态
+    var longPressSearchText by remember { mutableStateOf("") }
+    
     // Recent files manager
     val recentManager = rememberRecentFileManager()
-    
-    // Command palette state
-    var commandQuery by remember { mutableStateOf("") }
-    var showCommandQuery by remember { mutableStateOf(false) }
     
     // Get active file
     val activeFile = remember(openFiles, activeFileIndex) {
@@ -111,263 +135,135 @@ fun MedecodeApp() {
         val existingIndex = openFiles.indexOfFirst { it.path == path }
         
         if (existingIndex >= 0) {
-            // File already open, switch to it
             activeFileIndex = existingIndex
         } else {
-            // Add new file
             openFiles = openFiles + editorFile
             activeFileIndex = openFiles.size - 1
         }
         
-        // Add to recent files
         recentManager.addFile(path, name)
     }
     
-    fun closeFile(path: String) {
-        openFiles = openFiles.filter { it.path != path }
-        if (activeFileIndex >= openFiles.size) {
-            activeFileIndex = if (openFiles.isEmpty()) -1 else openFiles.size - 1
-        }
-    }
-    
-    // Keyboard shortcut handler
-    val onKeyEvent: (androidx.compose.ui.input.key.KeyEvent) -> Boolean = { keyEvent ->
-        when {
-            // Ctrl+P or Ctrl+Shift+P - Command palette
-            keyEvent.type == androidx.compose.ui.input.key.KeyEventType.KeyDown &&
-                androidx.compose.ui.input.key.isCtrlPressed(keyEvent) &&
-                keyEvent.key == androidx.compose.ui.input.key.Key.P -> {
-                showCommandPalette = true
-                true
-            }
-            // Ctrl+S - Save
-            keyEvent.type == androidx.compose.ui.input.key.KeyEventType.KeyDown &&
-                androidx.compose.ui.input.key.isCtrlPressed(keyEvent) &&
-                keyEvent.key == androidx.compose.ui.input.key.Key.S -> {
-                activeFile?.let { saveFileLauncher.launch(it.name) }
-                true
-            }
-            // Ctrl+F - Search
-            keyEvent.type == androidx.compose.ui.input.key.KeyEventType.KeyDown &&
-                androidx.compose.ui.input.key.isCtrlPressed(keyEvent) &&
-                keyEvent.key == androidx.compose.ui.input.key.Key.F -> {
-                showSearchReplace = true
-                true
-            }
-            // Ctrl+B - Toggle sidebar
-            keyEvent.type == androidx.compose.ui.input.key.KeyEventType.KeyDown &&
-                androidx.compose.ui.input.key.isCtrlPressed(keyEvent) &&
-                keyEvent.key == androidx.compose.ui.input.key.Key.B -> {
-                showSidebar = !showSidebar
-                true
-            }
-            else -> false
-        }
-    }
-    
-    LaunchedEffect(showCommandPalette) {
-        if (showCommandPalette) {
-            commandQuery = ""
-            showCommandQuery = true
-        }
-    }
-    
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .onPreviewKeyEvent(onKeyEvent)
-    ) {
-        Row(modifier = Modifier.fillMaxSize()) {
-            // Sidebar (optional, shown when project is open)
-            if (showSidebar && projectPath.isNotEmpty()) {
-                Sidebar(
-                    projectPath = projectPath,
-                    onFileSelected = { path, name ->
-                        try {
-                            java.io.File(path).takeIf { it.exists() }?.readText()?.let { fileContent ->
-                                openFile(name, path, fileContent)
-                            }
-                        } catch (e: Exception) {
-                            android.util.Log.e("Medecode", "Error reading file", e)
-                        }
-                    },
-                    onProjectPathChange = { newPath ->
-                        projectPath = newPath
-                        if (newPath.isEmpty()) {
-                            showSidebar = false
-                        }
-                    },
-                    modifier = Modifier.weight(0f)
-                )
-            }
-            
-            // Main content area
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxSize()
-            ) {
-                // Top app bar
-                TopAppBar(
-                    title = { 
-                        Text(
-                            text = if (activeFile != null) "${activeFile.name} - Medecode" else "Medecode",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    },
-                    actions = {
-                        // Recent files button
-                        IconButton(onClick = { showRecentFiles = true }) {
-                            Icon(
-                                Icons.Default.Schedule,
-                                "最近打开"
-                            )
-                        }
-                        // Toggle sidebar
-                        IconButton(onClick = { showSidebar = !showSidebar }) {
-                            Icon(
-                                Icons.Default.Menu,
-                                if (showSidebar) "隐藏侧边栏" else "显示侧边栏"
-                            )
-                        }
-                        // Open project
-                        IconButton(onClick = { 
-                            if (projectPath.isEmpty()) {
-                                showFileBrowser = true
-                            } else {
-                                projectPath = ""
-                                showSidebar = false
-                            }
-                        }) {
-                            Icon(
-                                Icons.Default.FolderOpen,
-                                if (projectPath.isNotEmpty()) "切换项目" else "打开项目"
-                            )
-                        }
-                        // Open file
-                        IconButton(onClick = { fileLauncher.launch(arrayOf("text/*")) }) {
-                            Icon(Icons.Default.OpenInNew, "打开文件")
-                        }
-                        // Save file
-                        IconButton(onClick = { activeFile?.let { saveFileLauncher.launch(it.name) }) {
-                            Icon(Icons.Default.Save, "保存")
-                        }
-                        // Settings
-                        IconButton(onClick = { showSettings = true }) {
-                            Icon(Icons.Default.Settings, "设置")
-                        }
+    // Welcome screen
+    if (openFiles.isEmpty()) {
+        WelcomeScreen(
+            onOpenProject = { showFileBrowser = true },
+            onOpenFile = { fileLauncher.launch(arrayOf("text/*")) },
+            onOpenRecentFiles = { showRecentFiles = true },
+            recentFiles = recentManager.getRecentFiles(),
+            onRecentFileSelected = { path, name ->
+                try {
+                    java.io.File(path).takeIf { it.exists() }?.readText()?.let { content ->
+                        openFile(name, path, content)
                     }
+                } catch (e: Exception) {
+                    android.util.Log.e("Medecode", "Error reading recent file", e)
+                }
+            },
+            onRecentFileRemoved = { recentManager.removeFile(it) }
+        )
+    } else {
+        // 主编辑界面 - 使用 Scaffold
+        Scaffold(
+            topBar = {
+                EditorTopBar(
+                    fileName = activeFile?.name ?: "",
+                    fileCount = openFiles.size,
+                    activeIndex = activeFileIndex,
+                    onFileSelected = { activeFileIndex = it },
+                    onSearch = { showSearchReplace = true },
+                    onRecentFiles = { showRecentFiles = true },
+                    onOpenProject = { 
+                        if (projectPath.isEmpty()) {
+                            showFileBrowser = true
+                        } else {
+                            projectPath = ""
+                            sidebarOpen = false
+                        }
+                    },
+                    onSave = { activeFile?.let { saveFileLauncher.launch(it.name) } },
+                    onSettings = { showSettings = true },
+                    onSidebarToggle = { sidebarOpen = !sidebarOpen }
                 )
+            },
+            drawerContent = {
+                if (projectPath.isNotEmpty()) {
+                    SidebarDrawerContent(
+                        projectPath = projectPath,
+                        onFileSelected = { path, name ->
+                            try {
+                                java.io.File(path).takeIf { it.exists() }?.readText()?.let { fileContent ->
+                                    openFile(name, path, fileContent)
+                                    sidebarOpen = false
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("Medecode", "Error reading file", e)
+                            }
+                        },
+                        onClose = { 
+                            projectPath = ""
+                            sidebarOpen = false
+                        }
+                    )
+                }
+            },
+            drawerState = if (projectPath.isNotEmpty()) rememberDrawerState(DrawerValue.Open) else rememberDrawerState(DrawerValue.Closed),
+            bottomBar = {
+                activeFile?.let { file ->
+                    MobileStatusBar(
+                        language = getLanguageFromFileName(file.name),
+                        totalLines = file.content.lines().size,
+                        totalChars = file.content.length
+                    )
+                }
+            }
+        ) { paddingValues ->
+            // Editor content
+            Column(modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)) {
                 
-                // Content
-                if (openFiles.isEmpty()) {
-                    // Welcome screen
+                // File tabs (scrollable for mobile)
+                if (openFiles.size > 1) {
+                    MobileFileTabs(
+                        files = openFiles,
+                        activeIndex = activeFileIndex,
+                        onTabSelected = { activeFileIndex = it },
+                        onTabClosed = { index ->
+                            openFiles = openFiles.toMutableList().apply { removeAt(index) }
+                            if (activeFileIndex >= openFiles.size) {
+                                activeFileIndex = if (openFiles.isEmpty()) -1 else openFiles.size - 1
+                            }
+                        }
+                    )
+                } else {
+                    activeFileIndex = 0
+                }
+                
+                // Code editor
+                activeFile?.let { file ->
+                    // 长按搜索功能
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(32.dp)
-                        ) {
-                            Text(
-                                text = "Medecode",
-                                style = MaterialTheme.typography.displayLarge
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Android 代码编辑器",
-                                style = MaterialTheme.typography.headlineMedium
-                            )
-                            Spacer(modifier = Modifier.height(32.dp))
-                            Button(
-                                onClick = { showFileBrowser = true },
-                                modifier = Modifier.fillMaxWidth(0.6f)
-                            ) {
-                                Icon(Icons.Default.FolderOpen, "打开项目", modifier = Modifier.padding(end = 8.dp))
-                                Text("打开项目")
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Button(
-                                onClick = { fileLauncher.launch(arrayOf("text/*")) },
-                                modifier = Modifier.fillMaxWidth(0.6f)
-                            ) {
-                                Icon(Icons.Default.OpenInNew, "打开文件", modifier = Modifier.padding(end = 8.dp))
-                                Text("打开文件")
-                            }
-                            Spacer(modifier = Modifier.height(24.dp))
-                            Text(
-                                text = "支持 Python、JavaScript、Java、Kotlin、C/C++、Go、Rust 等多种语言",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "快捷键: Ctrl+P 命令面板 | Ctrl+F 搜索 | Ctrl+S 保存 | Ctrl+B 侧边栏",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                } else {
-                    // Tab row for open files
-                    if (openFiles.size > 1) {
-                        TabRow(
-                            selectedTabIndex = activeFileIndex,
-                            modifier = Modifier.fillMaxWidth(),
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            scrollIndicatorModifier = Modifier.scrollIndicator(
-                                rememberScrollIndicatorState()
-                            )
-                        ) {
-                            openFiles.forEachIndexed { index, file ->
-                                Tab(
-                                    selected = index == activeFileIndex,
-                                    onClick = { activeFileIndex = index },
-                                    text = {
-                                        Text(
-                                            text = file.name,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    },
-                                    selectedContentColor = MaterialTheme.colorScheme.primary,
-                                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            .weight(1f)
+                            .pointerInput(Unit) {
+                                detectLongPressSwipe(
+                                    onLongPress = { x, y ->
+                                        longPressSearchText = getTextAtPosition(file.content, x, y)
+                                        showSearchReplace = true
+                                    }
                                 )
                             }
-                        }
-                    } else {
-                        activeFileIndex = 0
-                    }
-                    
-                    // Editor
-                    activeFile?.let { file ->
-                        val language = getLanguageFromFileName(file.name)
-                        val statusBarInfo = StatusBarInfo(
-                            language = language,
-                            line = 1,
-                            column = 1,
-                            totalLines = file.content.lines().size,
-                            totalChars = file.content.length
+                    ) {
+                        CodeEditor(
+                            editorFile = file,
+                            onContentChange = { newContent ->
+                                openFiles = openFiles.map { 
+                                    if (it == file) it.copy(content = newContent) else it 
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
                         )
-                        
-                        Column(modifier = Modifier.weight(1f)) {
-                            CodeEditor(
-                                editorFile = file,
-                                onContentChange = { newContent ->
-                                    openFiles = openFiles.map { 
-                                        if (it == file) it.copy(content = newContent) else it 
-                                    }
-                                },
-                                modifier = Modifier.weight(1f)
-                            )
-                            // Status bar
-                            StatusBar(info = statusBarInfo)
-                        }
                     }
                 }
             }
@@ -378,11 +274,10 @@ fun MedecodeApp() {
     if (showFileBrowser) {
         FileBrowser(
             onFileSelected = { path, name ->
-                // If it's a directory, set as project path
                 val file = java.io.File(path)
                 if (file.isDirectory) {
                     projectPath = path
-                    showSidebar = true
+                    sidebarOpen = true
                 } else {
                     try {
                         file.takeIf { it.exists() }?.readText()?.let { fileContent ->
@@ -399,10 +294,9 @@ fun MedecodeApp() {
     
     // Search and replace dialog
     if (showSearchReplace && activeFile != null) {
-        SearchReplaceDialog(
+        MobileSearchReplaceDialog(
             initialText = activeFile.content,
             onDismiss = { showSearchReplace = false },
-            onSearch = { _, _ -> },
             onReplace = { search, newContent ->
                 openFiles = openFiles.map { 
                     if (it == activeFile) it.copy(content = newContent) else it 
@@ -419,7 +313,7 @@ fun MedecodeApp() {
     
     // Recent files dialog
     if (showRecentFiles) {
-        RecentFilesPanel(
+        MobileRecentFilesDialog(
             recentManager = recentManager,
             onFileSelected = { path, name ->
                 try {
@@ -430,111 +324,851 @@ fun MedecodeApp() {
                     android.util.Log.e("Medecode", "Error reading recent file", e)
                 }
             },
-            onRemove = { path ->
-                recentManager.removeFile(path)
-            },
-            onClearAll = {
-                recentManager.clearAll()
-            },
+            onRemove = { path -> recentManager.removeFile(path) },
+            onClearAll = { recentManager.clearAll() },
             onDismiss = { showRecentFiles = false }
         )
     }
     
     // Command palette dialog
     if (showCommandPalette) {
-        CommandPalette(
-            state = remember { CommandPaletteState(
-                commands = listOf(
-                    CommandEntry(
-                        id = "search",
-                        label = "搜索和替换",
-                        description = "在文件中搜索和替换文本",
-                        icon = Icons.Default.Search,
-                        shortcut = "Ctrl+F"
-                    ) { showSearchReplace = true },
-                    CommandEntry(
-                        id = "toggle_sidebar",
-                        label = "切换侧边栏",
-                        description = "显示或隐藏文件树侧边栏",
-                        icon = Icons.Default.Menu,
-                        shortcut = "Ctrl+B"
-                    ) { showSidebar = !showSidebar },
-                    CommandEntry(
-                        id = "open_file",
-                        label = "打开文件",
-                        description = "从设备打开代码文件",
-                        icon = Icons.Default.OpenInNew
-                    ) { fileLauncher.launch(arrayOf("text/*")) },
-                    CommandEntry(
-                        id = "save_file",
-                        label = "保存文件",
-                        description = "保存当前编辑的文件",
-                        icon = Icons.Default.Save,
-                        shortcut = "Ctrl+S"
-                    ) { activeFile?.let { saveFileLauncher.launch(it.name) } },
-                    CommandEntry(
-                        id = "recent_files",
-                        label = "最近打开",
-                        description = "查看最近打开的文件",
-                        icon = Icons.Default.Schedule
-                    ) { showRecentFiles = true }
-                ),
-                onCommandSelected = {}
-            )},
-            onDismiss = { 
-                showCommandPalette = false 
-                showCommandQuery = false
-            }
+        MobileCommandPalette(
+            onDismiss = { showCommandPalette = false },
+            onSearch = { showSearchReplace = true },
+            onToggleSidebar = { sidebarOpen = !sidebarOpen },
+            onOpenFile = { fileLauncher.launch(arrayOf("text/*")) },
+            onSaveFile = { activeFile?.let { saveFileLauncher.launch(it.name) } },
+            onRecentFiles = { showRecentFiles = true }
         )
     }
     
     // Settings dialog
     if (showSettings) {
-        SettingsDialog(
+        MobileSettingsDialog(
             onDismiss = { showSettings = false }
         )
     }
 }
 
-@Composable
-fun SettingsDialog(
-    onDismiss: () -> Unit
-) {
-    var fontSize by remember { mutableIntStateOf(14) }
-    var darkTheme by remember { mutableStateOf(isSystemInDarkTheme()) }
+/**
+ * 长按检测
+ */
+private fun Modifier.detectLongPressSwipe(
+    onLongPress: (Float, Float) -> Unit
+): Modifier = composed {
+    var longPressTriggered by remember { mutableStateOf(false) }
+    var startX = 0f
+    var startY = 0f
     
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("设置") },
-        text = {
-            Column {
-                Text("字体大小: $fontSize")
-                Slider(
-                    value = fontSize.toFloat(),
-                    onValueChange = { fontSize = it.toInt() },
-                    valueRange = 10f..24f,
-                    modifier = Modifier.fillMaxWidth()
+    this
+        .pointerInput(Unit) {
+            detectHorizontalDragGestures(
+                onDragStart = { pos ->
+                    startX = pos.x
+                    startY = pos.y
+                },
+                onDragEnd = {
+                    if (!longPressTriggered && durationMillis > 500) {
+                        onLongPress(startX, startY)
+                    }
+                    longPressTriggered = false
+                },
+                onDragCancel = {
+                    longPressTriggered = false
+                },
+                onDragStartBlock = { pos ->
+                    startX = pos.x
+                    startY = pos.y
+                    true
+                },
+                onDragEndBlock = {
+                    longPressTriggered = false
+                }
+            )
+        }
+        .then(
+            Modifier.pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = {
+                        startX = it.x
+                        startY = it.y
+                    },
+                    onDrag = { change, dragAmount ->
+                        if (change.position.distance(startPos) > 10) {
+                            longPressTriggered = true
+                        }
+                    },
+                    onDragEnd = {
+                        if (longPressTriggered) {
+                            onLongPress(startX, startY)
+                        }
+                    }
                 )
+            }
+        )
+}
+
+/**
+ * 获取位置对应的代码行和列
+ */
+private fun getTextAtPosition(content: String, x: Float, y: Float): String {
+    val lines = content.lines()
+    val lineHeight = 21f // 约 14sp * 1.5
+    val lineIndex = (y / lineHeight).toInt().coerceIn(0, lines.size - 1)
+    return lines.getOrElse(lineIndex) { "" }
+}
+
+/**
+ * 欢迎屏幕 - 适配手机
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WelcomeScreen(
+    onOpenProject: () -> Unit,
+    onOpenFile: () -> Unit,
+    onOpenRecentFiles: () -> Unit,
+    recentFiles: List<com.medecode.ui.RecentFile>,
+    onRecentFileSelected: (String, String) -> Unit,
+    onRecentFileRemoved: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val isDark = isSystemInDarkTheme()
+    
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Medecode") },
+                actions = {
+                    IconButton(onClick = onOpenRecentFiles) {
+                        Icon(Icons.Default.Schedule, "最近打开")
+                    }
+                    IconButton(onClick = { /* TODO: 设置 */ }) {
+                        Icon(Icons.Default.Settings, "设置")
+                    }
+                }
+            )
+        },
+        content = { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // Logo
+                Icon(
+                    Icons.Default.Code,
+                    contentDescription = null,
+                    modifier = Modifier.size(80.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                
                 Spacer(modifier = Modifier.height(16.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
+                
+                Text(
+                    text = "Medecode",
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                Text(
+                    text = "Android 代码编辑器",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Spacer(modifier = Modifier.height(32.dp))
+                
+                // 主要操作按钮
+                OutlinedButton(
+                    onClick = onOpenProject,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
                 ) {
-                    Text("深色模式")
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Switch(
-                        checked = darkTheme,
-                        onCheckedChange = { darkTheme = it }
+                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.padding(end = 8.dp))
+                    Text("打开项目", fontSize = 16.sp)
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                OutlinedButton(
+                    onClick = onOpenFile,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                ) {
+                    Icon(Icons.Default.OpenInNew, null, modifier = Modifier.padding(end = 8.dp))
+                    Text("打开文件", fontSize = 16.sp)
+                }
+                
+                if (recentFiles.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    Text(
+                        text = "最近打开",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.align(Alignment.Start)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(recentFiles, key = { it.path }) { file ->
+                            MobileRecentFileItem(
+                                file = file,
+                                onClick = { onRecentFileSelected(file.path, file.name) },
+                                onRemove = { onRecentFileRemoved(file.path) }
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                // 支持的语言提示
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = "支持 Python · JavaScript · Java · Kotlin · C/C++ · Go · Rust 等",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(12.dp)
                     )
                 }
-            }
-        },
-        confirmButton = {
-            Button(onClick = onDismiss) {
-                Text("确定")
             }
         }
     )
 }
+
+/**
+ * 编辑器顶部栏
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditorTopBar(
+    fileName: String,
+    fileCount: Int,
+    activeIndex: Int,
+    onFileSelected: (Int) -> Unit,
+    onSearch: () -> Unit,
+    onRecentFiles: () -> Unit,
+    onOpenProject: () -> Unit,
+    onSave: () -> Unit,
+    onSettings: () -> Unit,
+    onSidebarToggle: () -> Unit
+) {
+    TopAppBar(
+        title = {
+            Text(
+                text = if (fileName.isNotEmpty()) fileName else "Medecode",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        navigationIcon = {
+            if (fileName.isNotEmpty()) {
+                IconButton(onClick = onSidebarToggle) {
+                    Icon(Icons.Default.Menu, "菜单")
+                }
+            }
+        },
+        actions = {
+            // 文件标签指示器
+            if (fileCount > 1) {
+                Text(
+                    text = "${activeIndex + 1}/$fileCount",
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp)
+                        .clickable { onFileSelected((activeIndex + 1) % fileCount) },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            // 搜索
+            IconButton(onClick = onSearch) {
+                Icon(Icons.Default.Search, "搜索")
+            }
+            // 最近文件
+            IconButton(onClick = onRecentFiles) {
+                Icon(Icons.Default.Schedule, "最近")
+            }
+            // 打开项目
+            IconButton(onClick = onOpenProject) {
+                Icon(Icons.Default.FolderOpen, "项目")
+            }
+            // 保存
+            IconButton(onClick = onSave) {
+                Icon(Icons.Default.Save, "保存")
+            }
+            // 设置
+            IconButton(onClick = onSettings) {
+                Icon(Icons.Default.Settings, "设置")
+            }
+        }
+    )
+}
+
+/**
+ * 侧边栏抽屉内容
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SidebarDrawerContent(
+    projectPath: String,
+    onFileSelected: (String, String) -> Unit,
+    onClose: () -> Unit
+) {
+    ModalNavigationDrawer(
+        drawerState = rememberDrawerState(DrawerValue.Open),
+        drawerContent = {
+            ModalDrawerSheet(
+                modifier = Modifier.width(280.dp)
+            ) {
+                DrawerHeader(
+                    projectName = projectPath.substringAfterLast('/'),
+                    onClose = onClose
+                )
+                
+                Divider()
+                
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
+                    // 这里应该显示项目文件树
+                    // 为简化，显示提示
+                    item {
+                        Text(
+                            text = "项目文件",
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.padding(16.dp, 8.dp)
+                        )
+                        Text(
+                            text = "请先选择一个项目目录",
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                }
+            }
+        }
+    ) {
+        // 内容由外部处理
+    }
+}
+
+@Composable
+private fun DrawerHeader(
+    projectName: String,
+    onClose: () -> Unit
+) {
+    Column(modifier = Modifier.padding(16.dp)) {
+        Text(
+            text = "项目",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = projectName.ifEmpty { "未选择" },
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+            IconButton(onClick = onClose) {
+                Icon(Icons.Default.Close, "关闭")
+            }
+        }
+    }
+}
+
+/**
+ * 手机文件标签页
+ */
+@Composable
+private fun MobileFileTabs(
+    files: List<EditorFile>,
+    activeIndex: Int,
+    onTabSelected: (Int) -> Unit,
+    onTabClosed: (Int) -> Unit
+) {
+    val listState = rememberLazyListState()
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        LazyRow(
+            state = listState,
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp)
+        ) {
+            items(files.indices.toList()) { index ->
+                TabChip(
+                    text = files[index].name,
+                    selected = index == activeIndex,
+                    onClose = if (index != activeIndex) { onTabClosed(index) } else null,
+                    onClick = { onTabSelected(index) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TabChip(
+    text: String,
+    selected: Boolean,
+    onClose: (() -> Unit)?,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .height(32.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer 
+                else MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                modifier = Modifier.weight(1f)
+            )
+            onClose?.let {
+                IconButton(
+                    onClick = it,
+                    modifier = Modifier.size(16.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        "关闭",
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 手机状态栏
+ */
+@Composable
+private fun MobileStatusBar(
+    language: String,
+    totalLines: Int,
+    totalChars: Int
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = language,
+                style = MaterialTheme.typography.labelSmall
+            )
+            Text(
+                text = "$totalLines 行 · $totalChars 字符",
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+    }
+}
+
+/**
+ * 手机搜索替换对话框
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MobileSearchReplaceDialog(
+    initialText: String,
+    onDismiss: () -> Unit,
+    onReplace: (String, String) -> Unit,
+    onReplaceAll: (String, String, String) -> Unit
+) {
+    var searchText by remember { mutableStateOf("") }
+    var replaceText by remember { mutableStateOf("") }
+    var caseSensitive by remember { mutableStateOf(false) }
+    
+    // 计算匹配数
+    val matchCount = remember(searchText, caseSensitive, initialText) {
+        findAllMatches(initialText, searchText, caseSensitive).size
+    }
+    
+    BottomSheetDialog(
+        onDismiss = onDismiss
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Text(
+                text = "搜索和替换",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            
+            OutlinedTextField(
+                value = searchText,
+                onValueChange = { searchText = it },
+                label = { Text("搜索") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            
+            if (searchText.isNotEmpty()) {
+                Text(
+                    text = "找到 $matchCount 个匹配",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (matchCount > 0) MaterialTheme.colorScheme.primary 
+                            else MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                )
+            }
+            
+            OutlinedTextField(
+                value = replaceText,
+                onValueChange = { replaceText = it },
+                label = { Text("替换为") },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                singleLine = true
+            )
+            
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        if (searchText.isNotEmpty()) {
+                            val newContent = initialText.replace(searchText, replaceText)
+                            onReplace(searchText, newContent)
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Replace, null, modifier = Modifier.padding(end = 4.dp))
+                    Text("全部替换")
+                }
+                
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("关闭")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 手机最近文件对话框
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MobileRecentFilesDialog(
+    recentManager: com.medecode.ui.RecentFileManager,
+    onFileSelected: (String, String) -> Unit,
+    onRemove: (String) -> Unit,
+    onClearAll: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    BottomSheetDialog(onDismiss = onDismiss) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "最近打开",
+                    style = MaterialTheme.typography.titleLarge
+                )
+                if (recentManager.getRecentFiles().isNotEmpty()) {
+                    TextButton(onClick = onClearAll) {
+                        Text("清空")
+                    }
+                }
+            }
+            
+            Divider(modifier = Modifier.padding(top = 8.dp))
+            
+            val recentFiles = recentManager.getRecentFiles()
+            if (recentFiles.isEmpty()) {
+                Text(
+                    text = "还没有打开过文件",
+                    modifier = Modifier.padding(vertical = 32.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(recentFiles, key = { it.path }) { file ->
+                        MobileRecentFileItem(
+                            file = file,
+                            onClick = { 
+                                onFileSelected(file.path, file.name) 
+                                onDismiss()
+                            },
+                            onRemove = { onRemove(file.path) }
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("关闭")
+            }
+        }
+    }
+}
+
+@Composable
+private fun MobileRecentFileItem(
+    file: com.medecode.ui.RecentFile,
+    onClick: () -> Unit,
+    onRemove: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(12.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                getFileIconForRecent(file.name),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
+            ) {
+                Text(
+                    text = file.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1
+                )
+                Text(
+                    text = formatTimestamp(file.timestamp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Default.Close, "移除", modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
+/**
+ * 手机命令面板
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MobileCommandPalette(
+    onDismiss: () -> Unit,
+    onSearch: () -> Unit,
+    onToggleSidebar: () -> Unit,
+    onOpenFile: () -> Unit,
+    onSaveFile: () -> Unit,
+    onRecentFiles: () -> Unit
+) {
+    BottomSheetDialog(onDismiss = onDismiss) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "命令面板",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            
+            CommandButton(
+                icon = Icons.Default.Search,
+                label = "搜索和替换",
+                description = "在文件中搜索和替换文本",
+                onClick = onSearch
+            )
+            
+            CommandButton(
+                icon = Icons.Default.Menu,
+                label = "切换侧边栏",
+                description = "显示或隐藏文件树",
+                onClick = onToggleSidebar
+            )
+            
+            CommandButton(
+                icon = Icons.Default.OpenInNew,
+                label = "打开文件",
+                description = "从设备打开代码文件",
+                onClick = onOpenFile
+            )
+            
+            CommandButton(
+                icon = Icons.Default.Save,
+                label = "保存文件",
+                description = "保存当前编辑的文件",
+                onClick = onSaveFile
+            )
+            
+            CommandButton(
+                icon = Icons.Default.Schedule,
+                label = "最近打开",
+                description = "查看最近打开的文件",
+                onClick = onRecentFiles
+            )
+        }
+    }
+}
+
+@Composable
+private fun CommandButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    description: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
+            ) {
+                Text(text = label, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 手机设置对话框
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MobileSettingsDialog(
+    onDismiss: () -> Unit
+) {
+    var fontSize by remember { mutableIntStateOf(14) }
+    
+    BottomSheetDialog(onDismiss = onDismiss) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "设置",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            
+            Text("字体大小: $fontSize", style = MaterialTheme.typography.bodyMedium)
+            Slider(
+                value = fontSize.toFloat(),
+                onValueChange = { fontSize = it.toInt() },
+                valueRange = 10f..24f,
+                modifier = Modifier.fillMaxWidth()
+            )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("完成")
+            }
+        }
+    }
+}
+
+/**
+ * 底部弹窗 (Bottom Sheet 风格)
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BottomSheetDialog(
+    onDismiss: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        shapes = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        tonalElevation = 8.dp
+    ) {
+        content()
+    }
+}
+
+// ==================== 工具函数 ====================
 
 private fun getUriFileName(uri: Uri): String? {
     var result: String? = null
@@ -575,28 +1209,57 @@ private fun getLanguageFromFileName(fileName: String): String {
         "gradle" -> "Gradle"
         "html" -> "HTML"
         "css" -> "CSS"
-        "scss" -> "SCSS"
-        "sass" -> "Sass"
-        "less" -> "Less"
         "sql" -> "SQL"
         "sh" -> "Shell"
-        "bash" -> "Bash"
         "md" -> "Markdown"
-        "txt" -> "Text"
-        "c" -> "C"
-        "cpp", "cc", "cxx" -> "C++"
-        "h", "hpp" -> "C++ Header"
         "rs" -> "Rust"
         "go" -> "Go"
         "rb" -> "Ruby"
         "php" -> "PHP"
-        "swift" -> "Swift"
-        "dart" -> "Dart"
-        "r" -> "R"
-        "lua" -> "Lua"
-        "scala" -> "Scala"
-        "jsx" -> "JSX"
-        "tsx" -> "TSX"
         else -> ext.ifEmpty { "Text" }.replaceFirstChar { it.uppercase() }
+    }
+}
+
+private fun findAllMatches(content: String, search: String, caseSensitive: Boolean): List<Int> {
+    if (search.isEmpty()) return emptyList()
+    val result = mutableListOf<Int>()
+    val searchIn = if (caseSensitive) content else content.lowercase()
+    val searchPattern = if (caseSensitive) search else search.lowercase()
+    var index = 0
+    while (index <= searchIn.length - searchPattern.length) {
+        val found = searchIn.indexOf(searchPattern, index)
+        if (found == -1) break
+        result.add(found)
+        index = found + 1
+    }
+    return result
+}
+
+fun getFileIconForRecent(name: String): androidx.compose.ui.graphics.vector.ImageVector {
+    val ext = name.substringAfterLast('.', "").lowercase()
+    return when (ext) {
+        "kt", "kts", "java" -> androidx.compose.material.icons.Icons.Default.Code
+        "py" -> androidx.compose.material.icons.Icons.Default.Description
+        "js", "ts" -> androidx.compose.material.icons.Icons.Default.Javascript
+        "json" -> androidx.compose.material.icons.Icons.Default.Database
+        "xml" -> androidx.compose.material.icons.Icons.Default.Code
+        "html" -> androidx.compose.material.icons.Icons.Default.Language
+        "md" -> androidx.compose.material.icons.Icons.Default.Article
+        else -> androidx.compose.material.icons.Icons.Default.InsertDriveFile
+    }
+}
+
+fun formatTimestamp(timestamp: Long): String {
+    val diff = System.currentTimeMillis() - timestamp
+    val minutes = diff / 60000
+    val hours = diff / 3600000
+    val days = diff / 86400000
+    
+    return when {
+        minutes < 1 -> "刚刚"
+        minutes < 60 -> "$minutes 分钟前"
+        hours < 24 -> "$hours 小时前"
+        days < 7 -> "$days 天前"
+        else -> "${days / 7} 周前"
     }
 }
