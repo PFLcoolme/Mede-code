@@ -121,9 +121,22 @@ Medecode/
 | 多标签 | ✅ | ✅ |
 | 文件大小 | 轻量 | 较重 |
 
-## 许可证
+## 相关项目
 
-MIT License
+### [Mede-IDE](https://github.com/Evilgodxu/Mede-IDE)
+
+[Mede-IDE](https://github.com/Evilgodxu/Mede-IDE) 是一款功能完整的 Android 平台 AI 辅助代码编辑器，采用 Jetpack Compose + Material 3 构建，集成本地大模型推理与云端 LLM API，具备完整的 IDE 基础功能。
+
+- **GitHub**: https://github.com/Evilgodxu/Mede-IDE
+- **定位**: 完整 IDE（类似 IDEA）
+- **特性**: AI 协作、内置终端、Git 集成、MCP 服务器、多媒体预览
+
+> **关系说明**: Medecode 由同一开发者维护，定位为轻量级代码编辑器（类似 VSCode），专注于提供简洁高效的编码体验。Mede-IDE 则定位为功能完整的 IDE（类似 IDEA），提供 AI 辅助、终端、Git 集成等高级功能。两个项目互补，满足不同场景需求。
+
+## 开发者
+
+- **开发者**: [PFLcoolme](https://github.com/PFLcoolme)
+- **协助者**: [Evilgodxu](https://github.com/Evilgodxu)
 
 ## 贡献
 
