@@ -1,45 +1,36 @@
 package com.medecode.editor
 
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.*
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.awt.SwingGraphicsConfig
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.*
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.medecode.model.EditorFile
-import com.medecode.model.Language
 
 /**
- * A composable for editing code with syntax highlighting, line numbers, and more
+ * A composable for editing code with line numbers and syntax support
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalTextApi::class)
 @Composable
 fun CodeEditor(
     editorFile: EditorFile,
@@ -47,14 +38,11 @@ fun CodeEditor(
     modifier: Modifier = Modifier
 ) {
     val darkTheme = isSystemInDarkTheme()
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val clipboardManager = LocalClipboardManager.current
     
     // Editor state
-    val textState = remember { MutableAnnotatedStringState(AnnotatedString(editorFile.content)) }
-    val searchText by remember { mutableStateOf("") }
-    val showSearch by remember { mutableStateOf(false) }
+    var textFieldValue by remember { 
+        mutableStateOf(TextFieldValue(editorFile.content, TextRange(editorFile.content.length))) 
+    }
     
     // Scroll states
     val verticalScrollState = rememberScrollState()
@@ -63,6 +51,9 @@ fun CodeEditor(
     // Font settings
     val fontSize = remember { mutableIntStateOf(14) }
     val fontFamily = FontFamily.Monospace
+    
+    // Tab settings
+    val tabSize = 4
     
     // Colors based on theme
     val editorColors = if (darkTheme) {
@@ -91,40 +82,34 @@ fun CodeEditor(
         )
     }
     
-    // Tab settings
-    val tabSize = 4
+    // Calculate line count
+    val lineCount = remember(textFieldValue.text) {
+        textFieldValue.text.count { it == '\n' } + 1
+    }
     
     // Keyboard handling
-    val onKeyDown: (KeyEvent) -> Boolean = { keyEvent ->
+    val onKeyDown: (androidx.compose.ui.input.key.KeyEvent) -> Boolean = { keyEvent ->
         when {
             // Tab key handling
-            keyEvent.key == Key.Tab -> {
-                val cursorStart = textState.annotatedString.selection.start
-                val cursorEnd = textState.annotatedString.selection.end
-                
-                if (cursorStart == cursorEnd) {
-                    // Insert spaces at cursor position
-                    val text = textState.annotatedString.text
-                    val newText = text.buildString {
-                        append(text.substring(0, cursorStart))
-                        repeat(tabSize) { append(" ") }
-                        append(text.substring(cursorEnd))
-                    }
-                    textState.annotatedString = AnnotatedString(newText)
-                    val newCursorPos = cursorStart + tabSize
-                    textState.annotatedString = AnnotatedString(
-                        newText,
-                        TextRange(newCursorPos)
-                    )
-                    onContentChange(newText)
+            keyEvent.key == Key.Tab && keyEvent.type == KeyEventType.KeyDown -> {
+                val newText = textFieldValue.text.buildString {
+                    append(textFieldValue.text.substring(0, textFieldValue.selection.start))
+                    repeat(tabSize) { append(" ") }
+                    append(textFieldValue.text.substring(textFieldValue.selection.end))
                 }
+                val newCursorPos = textFieldValue.selection.start + tabSize
+                textFieldValue = TextFieldValue(
+                    newText,
+                    TextRange(newCursorPos)
+                )
+                onContentChange(newText)
                 true
             }
             
             // Enter key handling - auto indent
-            keyEvent.key == Key.Enter -> {
-                val cursorPos = textState.annotatedString.selection.start
-                val text = textState.annotatedString.text
+            keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyDown -> {
+                val cursorPos = textFieldValue.selection.start
+                val text = textFieldValue.text
                 
                 // Find the current line
                 val lineStart = text.lastIndexOf('\n', cursorPos - 1) + 1
@@ -144,19 +129,14 @@ fun CodeEditor(
                 }
                 
                 // Check if we need to reduce indent (before })
-                val nextLine = text.substring(actualLineEnd).trimStart()
-                val reduceIndent = if (nextLine.startsWith('}')) {
-                    "    "
-                } else {
-                    ""
-                }
+                val nextLineText = text.substring(actualLineEnd).trimStart()
+                val hasReduceIndent = nextLineText.startsWith('}')
                 
-                val newIndent = indent + extraIndent.takeUnless { reduceIndent.isNullOrEmpty() }
-                    ?: if (reduceIndent != null && indent.length >= reduceIndent.length) {
-                        indent.substring(reduceIndent.length)
-                    } else {
-                        indent
-                    }
+                val newIndent = when {
+                    hasReduceIndent && indent.length >= 4 -> indent.substring(4)
+                    extraIndent.isNotEmpty() -> indent + extraIndent
+                    else -> indent
+                }
                 
                 val newText = text.buildString {
                     append(text.substring(0, cursorPos))
@@ -164,64 +144,46 @@ fun CodeEditor(
                     append(text.substring(cursorPos))
                 }
                 
-                textState.annotatedString = AnnotatedString(
+                val newCursorPos = cursorPos + 1 + newIndent.length
+                textFieldValue = TextFieldValue(
                     newText,
-                    TextRange(cursorPos + 1 + newIndent.length)
+                    TextRange(newCursorPos)
                 )
                 onContentChange(newText)
                 true
             }
             
             // Auto-close brackets and quotes
-            keyEvent.key == Key.LeftParen || keyEvent.key == Key.RightParen ||
-            keyEvent.key == Key.LeftBracket || keyEvent.key == Key.RightBracket ||
-            keyEvent.key == Key.LeftBracket || keyEvent.key == Key.RightBracket ||
-            keyEvent.key == Key.Quest || keyEvent.key == Key.Apostrophe -> {
-                val cursorStart = textState.annotatedString.selection.start
-                val cursorEnd = textState.annotatedString.selection.end
-                val text = textState.annotatedString.text
-                
+            keyEvent.type == KeyEventType.KeyDown -> {
                 val pairing = when (keyEvent.key) {
-                    Key.LeftParen -> "(" to ")"
-                    Key.RightParen -> null
-                    Key.LeftBracket -> "[" to "]"
-                    Key.RightBracket -> null
-                    Key.LeftBrace -> "{" to "}"
-                    Key.RightBrace -> null
-                    Key.Quest -> "\"" to "\""
+                    Key.ParenLeft -> "(" to ")"
+                    Key.BracketLeft -> "[" to "]"
+                    Key.BracketRight -> null
+                    Key.Companion.getBraceLeft() -> "{" to "}"
+                    Key.Companion.getQuote() -> "\"" to "\""
                     Key.Apostrophe -> "'" to "'"
                     else -> null
                 }
                 
-                if (pairing != null) {
-                    val (open, close) = pairing
-                    if (cursorStart == cursorEnd) {
-                        // Select and insert paired characters
-                        val newText = text.buildString {
-                            append(text.substring(0, cursorStart))
-                            append(open)
-                            append(close)
-                            append(text.substring(cursorEnd))
-                        }
-                        textState.annotatedString = AnnotatedString(
-                            newText,
-                            TextRange(cursorStart + 1)
-                        )
-                        onContentChange(newText)
+                pairing?.let { (open, close) ->
+                    val newText = textFieldValue.text.buildString {
+                        append(textFieldValue.text.substring(0, textFieldValue.selection.start))
+                        append(open)
+                        append(close)
+                        append(textFieldValue.text.substring(textFieldValue.selection.end))
                     }
+                    val newCursorPos = textFieldValue.selection.start + 1
+                    textFieldValue = TextFieldValue(
+                        newText,
+                        TextRange(newCursorPos)
+                    )
+                    onContentChange(newText)
                     true
-                } else {
-                    false
-                }
+                } ?: false
             }
             
             else -> false
         }
-    }
-    
-    // Calculate line count
-    val lineCount = remember(textState.annotatedString.text) {
-        textState.annotatedString.text.count { it == '\n' } + 1
     }
     
     Column(modifier = modifier) {
@@ -229,11 +191,6 @@ fun CodeEditor(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures { _, dragAmount ->
-                        horizontalScrollState.scrollBy(-dragAmount)
-                    }
-                }
         ) {
             // Line numbers gutter
             LineNumbersColumn(
@@ -246,55 +203,42 @@ fun CodeEditor(
                     .background(editorColors.lineNumbersBg)
             )
             
-            // Current line highlight
-            CurrentLineHighlight(
-                lineCount = lineCount,
-                scrollState = verticalScrollState,
-                colors = editorColors,
-                fontFontFamily = fontFontFamily,
-                fontSize = fontSize.intValue
-            )
-            
             // Code editing area
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .background(editorColors.background)
+                    .pointerInput(Unit) {
+                        detectHorizontalDragGestures { _, dragAmount ->
+                            horizontalScrollState.scrollBy(-dragAmount)
+                        }
+                    }
             ) {
                 BasicTextField(
-                    value = AnnotatedString(textState.annotatedString.text),
-                    onValueChange = { newText ->
-                        textState.annotatedString = newText
-                        onContentChange(newText.text)
+                    value = textFieldValue,
+                    onValueChange = { newValue ->
+                        textFieldValue = newValue
+                        onContentChange(newValue.text)
                     },
                     modifier = Modifier
                         .fillMaxSize()
                         .background(editorColors.background)
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures { _, dragAmount ->
-                                horizontalScrollState.scrollBy(-dragAmount)
-                            }
-                        },
+                        .verticalScroll(verticalScrollState)
+                        .horizontalScroll(horizontalScrollState)
+                        .onPreviewKeyEvent(onKeyDown),
                     textStyle = TextStyle(
                         color = editorColors.text,
                         fontSize = fontSize.value.sp,
-                        fontFamily = fontFontFamily,
-                        lineHeight = lineHeight(fontSize.intValue),
-                        caretStyle = CaretStyle(
-                            size = Offset(1f, fontSize.intValue.sp.value * 1.2f),
-                            color = editorColors.text
-                        )
+                        fontFamily = fontFamily,
+                        lineHeight = (fontSize.intValue * 1.5).sp,
+                        textAlign = TextAlign.Left
                     ),
                     cursorBrush = SolidColor(editorColors.text),
                     keyboardOptions = KeyboardOptions(
                         autoCorrect = false,
                         capitalization = KeyboardCapitalization.None
                     ),
-                    maxLines = Int.MAX_VALUE,
-                    onKeyEvent = onKeyDown,
-                    onSelectionChanged = { selection ->
-                        // Handle selection change
-                    }
+                    maxLines = Int.MAX_VALUE
                 )
             }
         }
@@ -329,22 +273,6 @@ private fun LineNumbersColumn(
     }
 }
 
-@Composable
-private fun CurrentLineHighlight(
-    lineCount: Int,
-    scrollState: androidx.compose.foundation.scroll.ScrollState,
-    colors: EditorColors,
-    fontFontFamily: FontFamily,
-    fontSize: Int
-) {
-    // This is a simplified version - a full implementation would track the current cursor line
-    Box(
-        modifier = Modifier
-            .width(1.dp)
-            .background(colors.currentLine)
-    )
-}
-
 /**
  * Editor colors for light and dark themes
  */
@@ -359,31 +287,3 @@ data class EditorColors(
     val indentGuide: Color,
     val bracketMatch: Color
 )
-
-/**
- * Line height calculation based on font size
- */
-fun lineHeight(fontSize: Int): LineHeight {
-    return LineHeight((fontSize * 1.5).sp)
-}
-
-/**
- * State holder for the annotated string
- */
-class MutableAnnotatedStringState(initialValue: AnnotatedString) {
-    var annotatedString: AnnotatedString by mutableStateOf(initialValue)
-        private set
-}
-
-/**
- * Helper to get syntax highlighted text
- */
-@Composable
-fun getSyntaxHighlightedText(code: String, language: Language): AnnotatedString {
-    val highlighted = SyntaxHighlight.highlightCode(code, language)
-    return if (highlighted is AnnotatedString) {
-        highlighted
-    } else {
-        AnnotatedString(highlighted.toString())
-    }
-}

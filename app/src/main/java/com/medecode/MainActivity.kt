@@ -1,14 +1,12 @@
 package com.medecode
 
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.DrawableRes
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.tab.*
@@ -23,13 +21,9 @@ import androidx.compose.ui.unit.dp
 import com.medecode.editor.CodeEditor
 import com.medecode.model.EditorFile
 import com.medecode.ui.theme.MedecodeTheme
-import java.io.File
 
 class MainActivity : ComponentActivity() {
     private var currentFileUri: Uri? = null
-    
-    // File content storage
-    private val fileContents = mutableMapOf<Uri, String>()
     
     // Activity result launcher for opening files
     private val fileLauncher = registerForActivityResult(
@@ -40,10 +34,8 @@ class MainActivity : ComponentActivity() {
             // Read file content
             contentResolver.openInputStream(it)?.use { inputStream ->
                 val content = inputStream.bufferedReader().readText()
-                fileContents[it] = content
-                // Update the open files
-                openFiles = openFiles.filter { it.path != it.name } // Remove placeholder
-                openFiles = openFiles + createEditorFile(it, content)
+                // Update the open files via callback
+                onFileOpened(it, content)
             }
         }
     }
@@ -52,15 +44,15 @@ class MainActivity : ComponentActivity() {
     private val saveFileLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain")
     ) { uri: Uri? ->
-        uri?.let {
-            currentFileUri = it
-            activeFile?.let { file ->
-                contentResolver.openOutputStream(it)?.use { outputStream ->
-                    outputStream.write(file.content.toByteArray())
-                }
-            }
+        uri?.let { uri ->
+            currentFileUri = uri
+            onSaveFile(uri)
         }
     }
+    
+    // Callbacks for editor state
+    var onFileOpened: (Uri, String) -> Unit = { _, _ -> }
+    var onSaveFile: (Uri) -> Unit = {}
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,8 +63,7 @@ class MainActivity : ComponentActivity() {
             currentFileUri = uri
             contentResolver.openInputStream(uri)?.use { inputStream ->
                 val content = inputStream.bufferedReader().readText()
-                fileContents[uri] = content
-                openFiles = openFiles + createEditorFile(uri, content)
+                onFileOpened(uri, content)
             }
         }
         
@@ -86,6 +77,9 @@ class MainActivity : ComponentActivity() {
                         onOpenFile = {
                             fileLauncher.launch(arrayOf("text/*"))
                         },
+                        onFilesChange = { files, index ->
+                            // Update file state
+                        },
                         onSaveFile = { file ->
                             saveFileLauncher.launch(file.name)
                         }
@@ -94,32 +88,13 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-    
-    private fun createEditorFile(uri: Uri, content: String): EditorFile {
-        val name = getFileName(uri) ?: "untitled"
-        return EditorFile(
-            name = name,
-            path = uri.toString(),
-            content = content
-        )
-    }
-    
-    private fun getFileName(uri: Uri): String? {
-        var name: String? = null
-        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (cursor.moveToFirst() && nameIndex != -1) {
-                name = cursor.getString(nameIndex)
-            }
-        }
-        return name
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MedecodeApp(
     onOpenFile: () -> Unit,
+    onFilesChange: (List<EditorFile>, Int) -> Unit,
     onSaveFile: (EditorFile) -> Unit
 ) {
     val darkTheme = isSystemInDarkTheme()
@@ -136,6 +111,11 @@ fun MedecodeApp(
         } else {
             null
         }
+    }
+    
+    // Update files when changed
+    LaunchedEffect(openFiles.size) {
+        onFilesChange(openFiles, activeFileIndex)
     }
     
     Scaffold(
@@ -175,7 +155,7 @@ fun MedecodeApp(
                     modifier = Modifier.padding(32.dp)
                 ) {
                     Text(
-                        text = "👨‍💻 Medecode",
+                        text = "Medecode",
                         style = MaterialTheme.typography.displayLarge
                     )
                     Spacer(modifier = Modifier.height(16.dp))
@@ -217,12 +197,6 @@ fun MedecodeApp(
                             Tab(
                                 selected = index == activeFileIndex,
                                 onClick = { activeFileIndex = index },
-                                icon = {
-                                    Icon(
-                                        getLanguageIcon(file.language),
-                                        text = file.name
-                                    )
-                                },
                                 text = {
                                     Text(
                                         text = file.name,
@@ -302,26 +276,3 @@ fun SettingsDialog(
         }
     )
 }
-
-@Composable
-fun getLanguageIcon(language: com.medecode.model.Language): ImageVector {
-    return when (language) {
-        com.medecode.model.Language.PYTHON -> Icons.Default.Code
-        com.medecode.model.Language.JAVASCRIPT, 
-        com.medecode.model.Language.TYPESCRIPT -> Icons.Default.Js
-        com.medecode.model.Language.JAVA, 
-        com.medecode.model.Language.KOTLIN -> Icons.Default.Android
-        com.medecode.model.Language.C, 
-        com.medecode.model.Language.CPP -> Icons.Default.Build
-        com.medecode.model.Language.GO -> Icons.Default.Dns
-        com.medecode.model.Language.RUST -> Icons.Default.Shield
-        else -> Icons.Default.Code
-    }
-}
-
-// Extension for Icon to accept ImageVector
-private fun Icon(Icons.Default.Js, text: String?) {}
-private fun Icon(Icons.Default.Android, text: String?) {}
-private fun Icon(Icons.Default.Build, text: String?) {}
-private fun Icon(Icons.Default.Dns, text: String?) {}
-private fun Icon(Icons.Default.Shield, text: String?) {}
