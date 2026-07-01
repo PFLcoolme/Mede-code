@@ -13,6 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 /**
  * Recently opened file entry
@@ -84,7 +87,7 @@ fun getFileIconForRecent(name: String): ImageVector {
         "java" -> Icons.Default.Android
         "py" -> Icons.Default.Description
         "js", "ts" -> Icons.Default.Javascript
-        "json" -> Icons.Default.Database
+        "json" -> Icons.Default.Storage
         "xml" -> Icons.Default.Code
         "yaml", "yml" -> Icons.Default.Settings
         "gradle" -> Icons.Default.Build
@@ -112,11 +115,10 @@ fun formatTimestamp(timestamp: Long): String {
         hours < 24 -> "$hours 小时前"
         days < 7 -> "$days 天前"
         else -> {
-            val java.util.Calendar cal = java.util.Calendar.getInstance()
-            cal.timeInMillis = timestamp
-            val month = cal.get(java.util.Calendar.MONTH) + 1
-            val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
-            "$month月$day日"
+            val cal = Calendar.getInstance().apply { timeInMillis = timestamp }
+            val month = cal.get(Calendar.MONTH) + 1
+            val day = cal.get(Calendar.DAY_OF_MONTH)
+            "${month}月${day}日"
         }
     }
 }

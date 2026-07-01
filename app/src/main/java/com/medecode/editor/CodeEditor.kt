@@ -1,6 +1,8 @@
 package com.medecode.editor
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -10,9 +12,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -22,6 +24,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -41,7 +44,7 @@ fun CodeEditor(
     
     // Editor state
     var textFieldValue by remember { 
-        mutableStateOf(TextFieldValue(editorFile.content, TextRange(editorFile.content.length))) 
+        mutableStateOf(TextFieldValue(text = editorFile.content, selection = TextRange(editorFile.content.length))) 
     }
     
     // Scroll states
@@ -92,15 +95,15 @@ fun CodeEditor(
         when {
             // Tab key handling
             keyEvent.key == Key.Tab && keyEvent.type == KeyEventType.KeyDown -> {
-                val newText = textFieldValue.text.buildString {
+                val newText = buildString {
                     append(textFieldValue.text.substring(0, textFieldValue.selection.start))
                     repeat(tabSize) { append(" ") }
                     append(textFieldValue.text.substring(textFieldValue.selection.end))
                 }
                 val newCursorPos = textFieldValue.selection.start + tabSize
                 textFieldValue = TextFieldValue(
-                    newText,
-                    TextRange(newCursorPos)
+                    text = newText,
+                    selection = TextRange(newCursorPos)
                 )
                 onContentChange(newText)
                 true
@@ -138,7 +141,7 @@ fun CodeEditor(
                     else -> indent
                 }
                 
-                val newText = text.buildString {
+                val newText = buildString {
                     append(text.substring(0, cursorPos))
                     append("\n$newIndent")
                     append(text.substring(cursorPos))
@@ -146,8 +149,8 @@ fun CodeEditor(
                 
                 val newCursorPos = cursorPos + 1 + newIndent.length
                 textFieldValue = TextFieldValue(
-                    newText,
-                    TextRange(newCursorPos)
+                    text = newText,
+                    selection = TextRange(newCursorPos)
                 )
                 onContentChange(newText)
                 true
@@ -155,18 +158,18 @@ fun CodeEditor(
             
             // Auto-close brackets and quotes
             keyEvent.type == KeyEventType.KeyDown -> {
-                val pairing = when (keyEvent.key) {
-                    Key.ParenLeft -> "(" to ")"
-                    Key.BracketLeft -> "[" to "]"
-                    Key.BracketRight -> null
-                    Key.Companion.getBraceLeft() -> "{" to "}"
-                    Key.Companion.getQuote() -> "\"" to "\""
-                    Key.Apostrophe -> "'" to "'"
+                val keyChar = keyEvent.nativeKeyEvent.unicodeChar.toChar().toString()
+                val pairing = when {
+                    keyChar == "(" -> "(" to ")"
+                    keyChar == "[" -> "[" to "]"
+                    keyChar == "{" -> "{" to "}"
+                    keyChar == "\"" -> "\"" to "\""
+                    keyChar == "'" || keyChar == "Apostrophe" -> "'" to "'"
                     else -> null
                 }
                 
                 pairing?.let { (open, close) ->
-                    val newText = textFieldValue.text.buildString {
+                    val newText = buildString {
                         append(textFieldValue.text.substring(0, textFieldValue.selection.start))
                         append(open)
                         append(close)
@@ -174,8 +177,8 @@ fun CodeEditor(
                     }
                     val newCursorPos = textFieldValue.selection.start + 1
                     textFieldValue = TextFieldValue(
-                        newText,
-                        TextRange(newCursorPos)
+                        text = newText,
+                        selection = TextRange(newCursorPos)
                     )
                     onContentChange(newText)
                     true
@@ -208,11 +211,6 @@ fun CodeEditor(
                 modifier = Modifier
                     .weight(1f)
                     .background(editorColors.background)
-                    .pointerInput(Unit) {
-                        detectHorizontalDragGestures { _, dragAmount ->
-                            horizontalScrollState.scrollBy(-dragAmount)
-                        }
-                    }
             ) {
                 BasicTextField(
                     value = textFieldValue,
@@ -248,19 +246,18 @@ fun CodeEditor(
 @Composable
 private fun LineNumbersColumn(
     lineCount: Int,
-    scrollState: androidx.compose.foundation.scroll.ScrollState,
+    scrollState: androidx.compose.foundation.ScrollState,
     colors: EditorColors,
     fontSize: Int,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(
-        modifier = modifier,
-        state = scrollState,
-        contentPadding = PaddingValues(vertical = 4.dp)
+    Column(
+        modifier = modifier.verticalScroll(scrollState),
+        horizontalAlignment = Alignment.End
     ) {
-        items(lineCount) { lineNum ->
+        for (lineNum in 1..lineCount) {
             Text(
-                text = (lineNum + 1).toString(),
+                text = lineNum.toString(),
                 color = colors.lineNumbersText,
                 fontSize = fontSize.sp,
                 fontFamily = FontFamily.Monospace,

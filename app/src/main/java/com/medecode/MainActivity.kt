@@ -5,21 +5,23 @@ import android.os.Bundle
 import android.provider.OpenableColumns
 import android.view.View
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -94,48 +96,46 @@ fun MedecodeApp() {
         }
     }
     
-    // File launcher for opening files
-    val fileLauncher = remember {
-        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-            uri?.let {
-                val fileName = getFileName(it) ?: "untitled"
-                contentResolver.openInputStream(it)?.use { inputStream ->
-                    val content = inputStream.bufferedReader().readText()
-                    openFile(fileName, it.toString(), content)
-                }
-            }
-        }
-    }
-    
-    // Save file launcher
-    val saveFileLauncher = remember {
-        registerForActivityResult(ActivityResultContracts.CreateDocument("text/*")) { uri: Uri? ->
-            uri?.let {
-                activeFile?.let { file ->
-                    try {
-                        contentResolver.openOutputStream(it)?.use { outputStream ->
-                            outputStream.write(file.content.toByteArray())
-                        }
-                    } catch (e: Exception) {
-                        // Handle error
-                    }
-                }
-            }
-        }
-    }
-    
+    val context = LocalContext.current
+
     fun openFile(name: String, path: String, content: String) {
         val editorFile = EditorFile(name = name, path = path, content = content)
         val existingIndex = openFiles.indexOfFirst { it.path == path }
-        
+
         if (existingIndex >= 0) {
             activeFileIndex = existingIndex
         } else {
             openFiles = openFiles + editorFile
             activeFileIndex = openFiles.size - 1
         }
-        
+
         recentManager.addFile(path, name)
+    }
+
+    // File launcher for opening files
+    val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        uri?.let {
+            val fileName = getFileName(context, it) ?: "untitled"
+            context.contentResolver.openInputStream(it)?.use { inputStream ->
+                val content = inputStream.bufferedReader().readText()
+                openFile(fileName, it.toString(), content)
+            }
+        }
+    }
+
+    // Save file launcher
+    val saveFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/*")) { uri: Uri? ->
+        uri?.let {
+            activeFile?.let { file ->
+                try {
+                    context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                        outputStream.write(file.content.toByteArray())
+                    }
+                } catch (e: Exception) {
+                    // Handle error
+                }
+            }
+        }
     }
     
     // 横屏布局 - 使用 Row 并排显示
@@ -249,14 +249,12 @@ fun MedecodeApp() {
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .pointerInput(Unit) {
-                                        detectLongPressSwipe(
-                                            onLongPress = { x, y ->
-                                                longPressSearchText = getTextAtPosition(file.content, x, y)
-                                                showSearchReplace = true
-                                            }
-                                        )
-                                    }
+                                    .detectLongPressSwipe(
+                                        onLongPress = { x, y ->
+                                            longPressSearchText = getTextAtPosition(file.content, x, y)
+                                            showSearchReplace = true
+                                        }
+                                    )
                             ) {
                                 CodeEditor(
                                     editorFile = file,
@@ -302,6 +300,10 @@ fun MedecodeApp() {
                     }
                 }
             },
+            onFolderSelected = { path ->
+                projectPath = path
+                showSidebar = true
+            },
             onDismiss = { showFileBrowser = false }
         )
     }
@@ -311,9 +313,9 @@ fun MedecodeApp() {
         MobileSearchReplaceDialog(
             initialText = activeFile.content,
             onDismiss = { showSearchReplace = false },
-            onReplace = { search, newContent ->
-                openFiles = openFiles.map { 
-                    if (it == activeFile) it.copy(content = newContent) else it 
+            onReplace = { _, newContent ->
+                openFiles = openFiles.map {
+                    if (it == activeFile) it.copy(content = newContent) else it
                 }
             },
             onReplaceAll = { _, search, replace ->
@@ -373,53 +375,34 @@ private fun Modifier.detectLongPressSwipe(
     var longPressTriggered by remember { mutableStateOf(false) }
     var startX = 0f
     var startY = 0f
+    var pressStartTime = 0L
     
     this
         .pointerInput(Unit) {
-            detectHorizontalDragGestures(
-                onDragStart = { pos ->
-                    startX = pos.x
-                    startY = pos.y
+            detectDragGestures(
+                onDragStart = {
+                    startX = it.x
+                    startY = it.y
+                    pressStartTime = System.currentTimeMillis()
+                },
+                onDrag = { _, _ ->
+                    val pressDuration = System.currentTimeMillis() - pressStartTime
+                    if (pressDuration > 500) {
+                        longPressTriggered = true
+                    }
                 },
                 onDragEnd = {
-                    if (!longPressTriggered && durationMillis > 500) {
+                    val pressDuration = System.currentTimeMillis() - pressStartTime
+                    if (!longPressTriggered && pressDuration > 500) {
                         onLongPress(startX, startY)
                     }
                     longPressTriggered = false
                 },
                 onDragCancel = {
                     longPressTriggered = false
-                },
-                onDragStartBlock = { pos ->
-                    startX = pos.x
-                    startY = pos.y
-                    true
-                },
-                onDragEndBlock = {
-                    longPressTriggered = false
                 }
             )
         }
-        .then(
-            Modifier.pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = {
-                        startX = it.x
-                        startY = it.y
-                    },
-                    onDrag = { change, dragAmount ->
-                        if (change.position.distance(startPos) > 10) {
-                            longPressTriggered = true
-                        }
-                    },
-                    onDragEnd = {
-                        if (longPressTriggered) {
-                            onLongPress(startX, startY)
-                        }
-                    }
-                )
-            }
-        )
 }
 
 /**
@@ -736,7 +719,7 @@ private fun MobileFileTabs(
                 TabChip(
                     text = files[index].name,
                     selected = index == activeIndex,
-                    onClose = if (index != activeIndex) { onTabClosed(index) } else null,
+                    onClose = if (index != activeIndex) { { onTabClosed(index) } } else null,
                     onClick = { onTabSelected(index) }
                 )
             }
@@ -748,7 +731,7 @@ private fun MobileFileTabs(
 private fun TabChip(
     text: String,
     selected: Boolean,
-    onClose: (() -> Unit)?,
+    onClose: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     Surface(
@@ -894,7 +877,7 @@ private fun MobileSearchReplaceDialog(
                     },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(Icons.Default.Replace, null, modifier = Modifier.padding(end = 4.dp))
+                    Icon(Icons.Default.SyncAlt, null, modifier = Modifier.padding(end = 4.dp))
                     Text("全部替换")
                 }
                 
@@ -1136,7 +1119,9 @@ private fun MobileSettingsDialog(
 ) {
     var fontSize by remember { mutableIntStateOf(14) }
     
-    BottomSheetDialog(onDismiss = onDismiss) {
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = "设置",
@@ -1164,6 +1149,8 @@ private fun MobileSettingsDialog(
     }
 }
 
+// ==================== 工具函数 ====================
+
 /**
  * 底部弹窗 (Bottom Sheet 风格)
  */
@@ -1173,21 +1160,17 @@ private fun BottomSheetDialog(
     onDismiss: () -> Unit,
     content: @Composable () -> Unit
 ) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        shapes = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-        tonalElevation = 8.dp
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss
     ) {
         content()
     }
 }
 
-// ==================== 工具函数 ====================
-
-private fun getUriFileName(uri: Uri): String? {
+private fun getUriFileName(uri: Uri, context: android.content.Context): String? {
     var result: String? = null
     if (uri.scheme == "content") {
-        val cursor = contentResolver.query(uri, null, null, null, null)
+        val cursor = context.contentResolver.query(uri, null, null, null, null)
         try {
             if (cursor != null && cursor.moveToFirst()) {
                 val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
@@ -1205,8 +1188,25 @@ private fun getUriFileName(uri: Uri): String? {
     return result
 }
 
-private fun getFileName(uri: Uri): String? {
-    return getUriFileName(uri)
+private fun getFileName(context: android.content.Context, uri: Uri): String? {
+    var result: String? = null
+    if (uri.scheme == "content") {
+        val cursor = context.contentResolver.query(uri, null, null, null, null)
+        try {
+            if (cursor != null && cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index != -1) {
+                    result = cursor.getString(index)
+                }
+            }
+        } finally {
+            cursor?.close()
+        }
+    }
+    if (result == null) {
+        result = uri.path?.substringAfterLast('/')
+    }
+    return result
 }
 
 private fun getLanguageFromFileName(fileName: String): String {
@@ -1255,7 +1255,7 @@ fun getFileIconForRecent(name: String): androidx.compose.ui.graphics.vector.Imag
         "kt", "kts", "java" -> androidx.compose.material.icons.Icons.Default.Code
         "py" -> androidx.compose.material.icons.Icons.Default.Description
         "js", "ts" -> androidx.compose.material.icons.Icons.Default.Javascript
-        "json" -> androidx.compose.material.icons.Icons.Default.Database
+        "json" -> androidx.compose.material.icons.Icons.Default.Storage
         "xml" -> androidx.compose.material.icons.Icons.Default.Code
         "html" -> androidx.compose.material.icons.Icons.Default.Language
         "md" -> androidx.compose.material.icons.Icons.Default.Article
@@ -1510,7 +1510,7 @@ private fun EditorTopBarLandscape(
         navigationIcon = {
             IconButton(onClick = onToggleSidebar) {
                 Icon(
-                    if (showSidebar) Icons.Default.Sidebar else Icons.Default.Menu,
+                    if (showSidebar) Icons.Default.Menu else Icons.Default.Menu,
                     "切换侧边栏",
                     tint = MaterialTheme.colorScheme.onSurface
                 )
@@ -1687,7 +1687,7 @@ private fun StatusBarLandscape(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBetween,
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(

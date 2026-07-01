@@ -40,10 +40,10 @@ fun getLanguageIcon(language: String): ImageVector {
         "swift" -> Icons.Default.Devices
         "dart" -> Icons.Default.FiberNew
         "html", "css" -> Icons.Default.Language
-        "sql" -> Icons.Default.Database
+        "sql" -> Icons.Default.Storage
         "shell", "bash" -> Icons.Default.Terminal
         "markdown", "md" -> Icons.Default.Article
-        "json" -> Icons.Default.Database
+        "json" -> Icons.Default.Storage
         "xml" -> Icons.Default.Code
         "yaml", "yml" -> Icons.Default.Settings
         else -> Icons.Default.Code

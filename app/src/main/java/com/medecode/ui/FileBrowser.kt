@@ -45,7 +45,7 @@ fun rememberFileBrowser(): FileBrowserState {
 @Composable
 fun FileBrowser(
     initialPath: String = "/",
-    onFileSelected: (String, String) -> Unit, // path, content
+    onFileSelected: (String, String) -> Unit, // path, name
     onFolderSelected: (String) -> Unit, // path
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
@@ -56,11 +56,11 @@ fun FileBrowser(
     
     LaunchedEffect(state.currentPath) {
         state = state.copy(isLoading = true, error = null)
-        val result = loadDirectory(state.currentPath)
+        val loadResult = loadDirectory(state.currentPath)
         state = state.copy(
-            files = result.files,
+            files = loadResult.getOrElse { emptyList() },
             isLoading = false,
-            error = result.error
+            error = loadResult.exceptionOrNull()?.message
         )
     }
     
@@ -240,14 +240,14 @@ private fun FileInfoRow(
     }
 }
 
-private fun loadDirectory(path: String): Result<FileBrowserState> {
+private fun loadDirectory(path: String): Result<List<FileInfo>> {
     return try {
         val file = File(path)
         if (!file.exists() || !file.isDirectory) {
             return Result.failure(Exception("目录不存在"))
         }
-        
-        val entries = file.listFiles()?.filter { 
+
+        val entries = file.listFiles()?.filter {
             it.name != "." && it.name != ".."
         }?.map { entry ->
             FileInfo(
@@ -259,11 +259,8 @@ private fun loadDirectory(path: String): Result<FileBrowserState> {
             )
         }?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
             ?: emptyList()
-        
-        Result.success(FileBrowserState(
-            currentPath = path,
-            files = entries ?: emptyList()
-        ))
+
+        Result.success(entries)
     } catch (e: Exception) {
         Result.failure(e)
     }

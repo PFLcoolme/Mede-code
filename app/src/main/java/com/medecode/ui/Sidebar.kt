@@ -1,5 +1,6 @@
 package com.medecode.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import java.io.File
 
@@ -107,14 +109,14 @@ fun getFileIcon(name: String): ImageVector {
         "java" -> Icons.Default.Android
         "py" -> Icons.Default.Description
         "js", "ts" -> Icons.Default.Javascript
-        "json" -> Icons.Default.Database
+        "json" -> Icons.Default.Storage
         "xml" -> Icons.Default.Code
         "yaml", "yml" -> Icons.Default.Settings
         "gradle" -> Icons.Default.Build
         "html" -> Icons.Default.Language
         "css" -> Icons.Default.ColorLens
         "md" -> Icons.Default.Article
-        "gitignore", "gitkeep" -> Icons.Default.Git
+        "gitignore", "gitkeep" -> Icons.Default.Code
         "sh" -> Icons.Default.Terminal
         "png", "jpg", "jpeg", "gif", "svg", "webp" -> Icons.Default.Image
         "mp3", "wav", "ogg" -> Icons.Default.MusicNote

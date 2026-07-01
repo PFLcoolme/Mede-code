@@ -157,16 +157,13 @@ fun SearchReplaceDialog(
                             },
                             enabled = totalMatches > 0
                         ) {
-                            Icon(Icons.Default.Replace, "替换", modifier = Modifier.padding(end = 4.dp))
+                            Icon(Icons.Default.SyncAlt, "替换", modifier = Modifier.padding(end = 4.dp))
                             Text("替换")
                         }
                         
                         Button(
                             onClick = {
                                 if (totalMatches > 0) {
-                                    results.forEach { (start, end) ->
-                                        replaceText = replaceText
-                                    }
                                     var result = initialText
                                     results.reversed().forEach { (start, end) ->
                                         result = result.replaceRange(start, end, replaceText)
@@ -176,7 +173,7 @@ fun SearchReplaceDialog(
                             },
                             enabled = totalMatches > 0
                         ) {
-                            Icon(Icons.Default.ReplaceAll, "全部替换", modifier = Modifier.padding(end = 4.dp))
+                            Icon(Icons.Default.SyncAlt, "全部替换", modifier = Modifier.padding(end = 4.dp))
                             Text("全部替换")
                         }
                     }
