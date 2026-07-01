@@ -1,0 +1,78 @@
+# Built application files
+*.apk
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+#  TODO: Remove this for the newer Android Gradle Plugin
+#  This regular expression empty character directories including
+#  those created by Android touchup art processing
+-r/*
+*/r/*
+*/*/r/*
+*/*/*/r/*
+*/*/*/*/r/*
+tampermonkey-output/
+
+# Gradle files
+.gradle/
+build/
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# ProGuard folder
+# proguard/
+
+# PNG images
+# *.png
+
+# IDE - Android Studio
+.idea/
+*.iml
+*.ipr
+*.iws
+.platformio/
+
+# IDE - VS Code
+.vscode/
+
+# IDE - IntelliJ
+misc.xml
+deploymentTargetSelector.xml
+downloadableSettings.xml
+
+# Keystore files
+# *.jks
+# *.keystore
+
+# External native build folder generated in Android Studio 2.2 and later
+.externalNativeBuild
+.cxx/
+
+# Version control
+.svn/
+
+# API keys
+local.properties
+
+# Log Files
+*.log
+
+# Android Profiling
+*.hprof
+
+# Android Build Config
+buildConfig/
+
+# Android App Startup
+androidx.profileinstaller/
