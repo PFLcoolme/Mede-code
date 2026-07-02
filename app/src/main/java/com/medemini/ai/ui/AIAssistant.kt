@@ -57,37 +57,74 @@ fun AIAssistantPanel(
         }
     }
     
+    // 半透明背景（更透明，能看到下方代码）
+    val translucentBackground = Color(0x80000000) // 50% 透明度的黑色
+    
     Column(
         modifier = Modifier
             .fillMaxHeight()
-            .width(360.dp)
-            .background(Color(0xFFF8F9FA))
+            .width(180.dp)
+            .background(translucentBackground)
     ) {
-        // 标题栏
+        // 顶部按钮栏
         Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.Code, "AI助手", modifier = Modifier.size(24.dp), tint = Color(0xFF6344CF))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("MedeMini AI", style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black))
-            Spacer(modifier = Modifier.weight(1f))
-            IconButton(onClick = onShowSettings) {
-                Icon(Icons.Default.Settings, "AI设置", tint = Color(0xFF666666))
+            // 新建对话按钮
+            IconButton(
+                onClick = { viewModel.clearChat() },
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    Icons.Default.Add, "新建对话",
+                    modifier = Modifier.size(16.dp),
+                    tint = Color.White.copy(0.9f)
+                )
             }
-            IconButton(onClick = viewModel::closeAIChat) {
-                Icon(Icons.Default.Close, "关闭", tint = Color(0xFF666666))
+            // 历史对话按钮
+            IconButton(
+                onClick = { /* TODO: 显示历史 */ },
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    Icons.Default.AccessTime, "历史对话",
+                    modifier = Modifier.size(16.dp),
+                    tint = Color.White.copy(0.9f)
+                )
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            // 设置按钮
+            IconButton(
+                onClick = onShowSettings,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    Icons.Default.Settings, "AI设置",
+                    modifier = Modifier.size(16.dp),
+                    tint = Color.White.copy(0.9f)
+                )
+            }
+            // 关闭按钮
+            IconButton(
+                onClick = viewModel::closeAIChat,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    Icons.Default.Close, "关闭",
+                    modifier = Modifier.size(16.dp),
+                    tint = Color.White.copy(0.9f)
+                )
             }
         }
-        
-        Divider()
         
         // 对话消息区域
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(16.dp),
+                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 8.dp),
                 state = listState,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // 欢迎消息
                 if (messages.isEmpty()) {
@@ -126,22 +163,30 @@ fun AIAssistantPanel(
             }
         }
         
-        Divider()
-        
         // 输入区域
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             TextField(
                 value = inputText,
                 onValueChange = { inputText = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("输入消息...", color = Color(0xFF999999)) },
-                shape = RoundedCornerShape(24.dp),
-                maxLines = 3
+                placeholder = { Text("提问...", color = Color.White.copy(0.5f)) },
+                shape = RoundedCornerShape(16.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedPlaceholderColor = Color.White.copy(0.5f),
+                    unfocusedPlaceholderColor = Color.White.copy(0.5f),
+                    focusedContainerColor = Color.White.copy(alpha = 0.15f),
+                    unfocusedContainerColor = Color.White.copy(alpha = 0.1f),
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent
+                ),
+                maxLines = 1
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(4.dp))
             IconButton(
                 onClick = {
                     if (inputText.isNotBlank()) {
@@ -153,7 +198,8 @@ fun AIAssistantPanel(
             ) {
                 Icon(
                     Icons.Default.Send, "发送",
-                    tint = if (chatState is ChatState.Loading || inputText.isBlank()) Color(0xFFCCCCCC) else Color(0xFF6344CF)
+                    modifier = Modifier.size(18.dp),
+                    tint = if (chatState is ChatState.Loading || inputText.isBlank()) Color.White.copy(0.3f) else Color.White.copy(0.9f)
                 )
             }
         }

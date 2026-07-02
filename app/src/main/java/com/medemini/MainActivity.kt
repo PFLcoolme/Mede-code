@@ -222,9 +222,20 @@ fun MedeMiniApp() {
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // 主内容区域
-                Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    // 文件浏览器侧边栏
+                    if (showSidebar) {
+                        FileBrowserPanel(
+                            projectPath = projectPath,
+                            onFileSelected = { name, path, content ->
+                                openFile(name, path, content)
+                            },
+                            modifier = Modifier.width(200.dp).align(Alignment.CenterStart)
+                        )
+                    }
+                
                     // 编辑器主区域
-                    Box(modifier = Modifier.weight(1f).fillMaxSize().background(AppSettings.editorBgColor)) {
+                    Box(modifier = Modifier.fillMaxSize().background(AppSettings.editorBgColor)) {
                         activeFile?.let { file ->
                             CodeEditor(
                                 editorFile = file, 
@@ -236,7 +247,7 @@ fun MedeMiniApp() {
                         }
                     }
                 
-                    // AI 助手面板
+                    // AI 助手面板（覆盖在编辑器上方，实现半透明效果）
                     if (showAIChat) {
                         AIAssistantPanel(
                             viewModel = aiViewModel,
