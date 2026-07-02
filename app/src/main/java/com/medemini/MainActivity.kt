@@ -223,27 +223,35 @@ fun MedeMiniApp() {
             Column(modifier = Modifier.fillMaxSize()) {
                 // 主内容区域
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    // 文件浏览器侧边栏
-                    if (showSidebar) {
-                        FileBrowserPanel(
-                            projectPath = projectPath,
-                            onFileSelected = { name, path, content ->
-                                openFile(name, path, content)
-                            },
-                            modifier = Modifier.width(200.dp).align(Alignment.CenterStart)
-                        )
-                    }
-                
-                    // 编辑器主区域
-                    Box(modifier = Modifier.fillMaxSize().background(AppSettings.editorBgColor)) {
-                        activeFile?.let { file ->
-                            CodeEditor(
-                                editorFile = file, 
-                                onContentChange = { newContent ->
-                                    openFiles = openFiles.map { if (it == file) it.copy(content = newContent) else it }
-                                }, 
-                                modifier = Modifier.fillMaxSize()
+                    // 文件浏览器侧边栏和编辑器的容器
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        // 文件浏览器侧边栏
+                        if (showSidebar) {
+                            FileBrowserPanel(
+                                projectPath = projectPath,
+                                onFileSelected = { name, path, content ->
+                                    openFile(name, path, content)
+                                },
+                                modifier = Modifier.width(200.dp)
                             )
+                        }
+                    
+                        // 编辑器主区域
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxSize()
+                                .background(AppSettings.editorBgColor)
+                        ) {
+                            activeFile?.let { file ->
+                                CodeEditor(
+                                    editorFile = file, 
+                                    onContentChange = { newContent ->
+                                        openFiles = openFiles.map { if (it == file) it.copy(content = newContent) else it }
+                                    }, 
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                         }
                     }
                 
