@@ -174,13 +174,19 @@ fun Sidebar(
         }
         Divider(color = Color.Black.copy(alpha = 0.15f))
 
-        // 文件树
+        // 文件树 - 使用 weight 填充剩余空间并确保可滚动
         if (projectPath.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
                 Text("请选择项目目录", style = TextStyle(fontSize = 10.sp, color = Color(0xFF999999)))
             }
         } else if (fileTree.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Default.FolderOff, null, modifier = Modifier.size(24.dp), tint = Color(0xFFCCCCCC))
                     Spacer(modifier = Modifier.height(4.dp))
@@ -189,7 +195,11 @@ fun Sidebar(
                 }
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 2.dp)) {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(vertical = 2.dp, horizontal = 2.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp)
+            ) {
                 items(fileTree, key = { it.path }) { node ->
                     FileTreeNodeItem(
                         node = node, depth = 0,
