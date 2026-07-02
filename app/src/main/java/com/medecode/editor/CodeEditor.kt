@@ -37,8 +37,13 @@ fun CodeEditor(
 ) {
     val darkTheme = isSystemInDarkTheme()
 
-    var textFieldValue by remember {
+    var textFieldValue by remember(editorFile.path) {
         mutableStateOf(TextFieldValue(text = editorFile.content, selection = TextRange(editorFile.content.length)))
+    }
+
+    // 当文件切换时，更新内容
+    LaunchedEffect(editorFile.path) {
+        textFieldValue = TextFieldValue(text = editorFile.content, selection = TextRange(editorFile.content.length))
     }
 
     val verticalScrollState = rememberScrollState()
