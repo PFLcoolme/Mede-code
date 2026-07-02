@@ -211,7 +211,7 @@ fun MedecodeApp() {
                 // 编辑器区域
                 Box(modifier = Modifier.weight(1f).fillMaxWidth().background(AppSettings.editorBgColor)) {
                     activeFile?.let { file ->
-                        CodeEditor(editorFile = file, onContentChange = { newContent ->
+                        CodeEditor(key = file.path, editorFile = file, onContentChange = { newContent ->
                             openFiles = openFiles.map { if (it == file) it.copy(content = newContent) else it }
                         }, modifier = Modifier.fillMaxSize())
                     }
