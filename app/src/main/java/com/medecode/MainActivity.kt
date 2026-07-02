@@ -94,7 +94,7 @@ object AppSettings {
 @Composable
 fun MedecodeApp() {
     var openFiles by remember { mutableStateOf<List<EditorFile>>(emptyList()) }
-    var activeFileIndex by remember { mutableIntStateOf(-1) }
+    var activeFileIndex by remember { mutableStateOf(-1) }
     var showSidebar by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
@@ -119,7 +119,7 @@ fun MedecodeApp() {
         if (existingIndex >= 0) {
             activeFileIndex = existingIndex
         } else {
-            openFiles = openFiles + editorFile
+            openFiles = openFiles.toMutableList().apply { add(editorFile) }
             activeFileIndex = openFiles.size - 1
         }
         recentManager.addFile(path, name)
@@ -211,7 +211,7 @@ fun MedecodeApp() {
                 // 编辑器区域
                 Box(modifier = Modifier.weight(1f).fillMaxWidth().background(AppSettings.editorBgColor)) {
                     activeFile?.let { file ->
-                        CodeEditor(key = file.path, editorFile = file, onContentChange = { newContent ->
+                        CodeEditor(editorFile = file, onContentChange = { newContent ->
                             openFiles = openFiles.map { if (it == file) it.copy(content = newContent) else it }
                         }, modifier = Modifier.fillMaxSize())
                     }
@@ -243,7 +243,7 @@ fun MedecodeApp() {
                     openFiles = openFiles, activeFileIndex = activeFileIndex,
                     onTabClick = { activeFileIndex = it },
                     onTabClose = { index ->
-                        openFiles = openFiles.toMutableList().also { it.removeAt(index) }
+                        openFiles = openFiles.toMutableList().apply { removeAt(index) }
                         if (activeFileIndex >= openFiles.size) activeFileIndex = (openFiles.size - 1).coerceAtLeast(-1)
                     },
                     onSettingsClick = { showSettings = true }
@@ -266,7 +266,7 @@ fun MedecodeApp() {
                     DropdownMenuItem(text = { Text("关闭文件", fontSize = 13.sp) }, onClick = {
                         showMenu = false
                         if (activeFileIndex >= 0) {
-                            openFiles = openFiles.toMutableList().also { it.removeAt(activeFileIndex) }
+                            openFiles = openFiles.toMutableList().apply { removeAt(activeFileIndex) }
                             activeFileIndex = if (openFiles.isEmpty()) -1 else (activeFileIndex - 1).coerceAtLeast(0)
                         }
                     })
