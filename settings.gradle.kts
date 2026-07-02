@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Medecode"
+rootProject.name = "MedeMini"
 include(":app")

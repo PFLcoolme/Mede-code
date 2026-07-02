@@ -1,169 +1,129 @@
-# Medecode - Android 代码编辑器
+# MedeMini
 
-一个支持多语言语法高亮的 Android 代码编辑器应用。
+一个轻量级的 Android 代码编辑器，内置强大的 AI 编程助手。
 
 ## 功能特性
 
-- 📝 **代码编辑** - 支持代码编辑的基本功能
-- 🎨 **语法高亮** - 支持多种编程语言的语法高亮
-- 🌙 **深色/浅色模式** - 跟随系统主题自动切换
-- 📂 **文件浏览器** - 浏览设备文件系统，选择文件打开
-- 📁 **侧边栏文件树** - VSCode 风格的项目文件树面板
-- 🔍 **搜索和替换** - 查找和替换文本，支持区分大小写
-- 📊 **底部状态栏** - 显示语言、编码、光标位置、行数
-- ⌨️ **智能输入** - 自动缩进、括号自动补全
-- 📑 **多标签页** - 同时编辑多个文件
-- 🎹 **命令面板** - VSCode 风格的快速命令面板
-- 🕐 **最近打开文件** - 快速访问最近编辑的文件
-- 📂 **代码折叠** - 基于花括号的代码折叠
+### 核心功能
+- 📱 轻量级代码编辑器，专为 Android 设计
+- 📂 文件浏览器 - 浏览和管理项目文件
+- 📑 多文件标签页 - 同时编辑多个文件
+- 🎨 语法高亮 - 支持多种编程语言
+- 🔍 搜索和替换 - 强大的文本搜索功能
+- 📜 代码折叠 - 更清晰地查看代码结构
+- 🕒 最近文件 - 快速访问最近打开的文件
+- ⌨️ 命令面板 - 快速访问功能
+- 🌗 黑白极简设计 - 舒适的阅读体验
+- 🪟 毛玻璃效果 - 半透明浮动侧边栏
 
-## 快捷键
+### AI 编程助手 🤖
+- 💬 **AI 对话窗口** - 右侧滑出式 AI 聊天面板
+- 🔧 **50+ AI 工具** - 文件操作、代码编辑、分析、构建测试等
+- ⚙️ **AI 设置** - 配置 API Key、MCP 服务、模型参数
+- 🎯 **代码审查系统** - AI 修改代码后需要用户审查确认
+- 🟢 **差异高亮** - 新增代码半透明绿色标记，删除代码半透明红色标记
+- 📝 **智能代码修改** - AI 可直接读取和编辑当前文件内容
 
-| 快捷键 | 功能 |
-|--------|------|
-| `Ctrl+P` | 打开命令面板 |
-| `Ctrl+F` | 搜索和替换 |
-| `Ctrl+S` | 保存文件 |
-| `Ctrl+B` | 切换侧边栏 |
-
-## 支持的语言
-
-- Python
-- JavaScript / TypeScript
-- Java / Kotlin
-- C / C++
-- Go
-- Rust
-- Ruby
-- PHP
-- Swift
-- Dart
-- Shell / Bash
-- HTML / CSS
-- SQL
-- 更多...
+### AI 工具列表
+| 类别 | 工具数量 | 工具列表 |
+|------|----------|----------|
+| 文件操作 | 10 | 读取、写入、创建、删除、列出、搜索、复制、移动、获取信息、创建目录 |
+| 代码编辑 | 15 | 插入行、删除行、替换行、替换范围、查找引用、查找定义、重命名、添加导入/方法/字段、提取方法、格式化等 |
+| 代码分析 | 10 | 语法分析、Bug 查找、类型检查、复杂度分析、重复代码、依赖分析、代码度量、弃用查找、TODO 查找、代码注释 |
+| 构建测试 | 8 | 构建项目、运行测试、清理、生成文档、调试、运行命令、检查依赖、Gradle 任务 |
+| Git 操作 | 4 | 查看状态、查看变更、查看历史、提交代码 |
+| UI/UX | 3 | 改进建议、重构、生成测试 |
+| 通用 | 3 | 网络搜索、计算、代码转换 |
 
 ## 技术栈
 
 - **语言**: Kotlin
 - **UI 框架**: Jetpack Compose
-- **设计**: Material Design 3
+- **架构**: MVVM + 状态管理 (StateFlow)
+- **网络**: Retrofit + OkHttp
+- **异步**: Kotlin Coroutines
+- **最低 API**: 26 (Android 8.0)
 
 ## 项目结构
 
 ```
-Medecode/
-├── app/
-│   ├── src/main/
-│   │   ├── java/com/medecode/
-│   │   │   ├── MainActivity.kt          # 主活动
-│   │   │   ├── editor/
-│   │   │   │   ├── CodeEditor.kt        # 代码编辑器组件
-│   │   │   │   └── SyntaxHighlight.kt   # 语法高亮逻辑
-│   │   │   ├── model/
-│   │   │   │   └── EditorFile.kt        # 数据模型
-│   │   │   └── ui/
-│   │   │       ├── FileBrowser.kt       # 文件浏览器
-│   │   │       ├── Sidebar.kt           # 侧边栏文件树
-│   │   │       ├── SearchReplace.kt     # 搜索和替换
-│   │   │       ├── StatusBar.kt         # 底部状态栏
-│   │   │       ├── CommandPalette.kt    # 命令面板
-│   │   │       ├── CodeFolding.kt       # 代码折叠
-│   │   │       ├── RecentFiles.kt       # 最近文件
-│   │   │       └── theme/
-│   │   │           ├── Theme.kt         # 应用主题
-│   │   │           └── Type.kt          # 字体排版
-│   │   ├── res/                         # 资源文件
-│   │   └── AndroidManifest.xml          # 应用清单
-│   └── build.gradle.kts                 # 应用级构建配置
-├── build.gradle.kts                     # 项目级构建配置
-├── settings.gradle.kts                  # 项目设置
-└── gradle.properties                    # Gradle 配置
+app/src/main/java/com/medemini/
+├── MainActivity.kt              # 主 Activity
+├── ai/
+│   ├── model/
+│   │   └── AIMessage.kt         # AI 消息模型
+│   ├── api/
+│   │   └── AIService.kt         # AI API 接口
+│   ├── viewmodel/
+│   │   └── AIViewModel.kt       # AI ViewModel
+│   └── ui/
+│       ├── AIAssistant.kt       # AI 对话面板
+│       └── AISettings.kt        # AI 设置窗口
+├── editor/
+│   ├── CodeEditor.kt            # 代码编辑器
+│   └── SyntaxHighlight.kt       # 语法高亮
+├── model/
+│   └── EditorFile.kt            # 文件模型
+└── ui/
+    ├── CodeFolding.kt           # 代码折叠
+    ├── CommandPalette.kt        # 命令面板
+    ├── FileBrowser.kt           # 文件浏览器
+    ├── RecentFiles.kt           # 最近文件
+    ├── SearchReplace.kt         # 搜索替换
+    ├── Sidebar.kt               # 侧边栏
+    └── StatusBar.kt             # 状态栏
 ```
 
-## 构建和运行
+## 构建说明
 
-### 前提条件
+1. 使用 Android Studio 打开项目
+2. 同步 Gradle 项目
+3. 运行或构建应用
 
-- Android Studio Hedgehog 或更高版本
-- Android SDK 34
-- JDK 17 或更高版本
+### Gradle 依赖
 
-### 构建步骤
-
-1. 打开 Android Studio
-2. 选择 `File -> Open`，选择本项目目录
-3. 等待 Gradle 同步完成
-4. 连接 Android 设备或启动模拟器
-5. 点击运行按钮（Shift + F10）
-
-### 命令行构建
-
-```bash
-# 构建调试版本
-./gradlew assembleDebug
-
-# 安装到设备
-./gradlew installDebug
-
-# 构建发布版本
-./gradlew assembleRelease
+```kotlin
+// AI 功能依赖
+implementation("com.squareup.retrofit2:retrofit:2.9.0")
+implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+implementation("com.squareup.okhttp3:okhttp:4.12.0")
+implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 ```
 
-## 开发计划
+## AI 配置
 
-- [x] 基本代码编辑器
-- [x] 语法高亮
-- [x] 行号显示
-- [x] 深色/浅色主题
-- [x] 文件打开/保存
-- [x] 多标签页支持
-- [x] 文件浏览器
-- [x] 侧边栏文件树
-- [x] 搜索和替换
-- [x] 底部状态栏
-- [x] 命令面板
-- [x] 代码折叠
-- [x] 最近打开文件
-- [ ] 代码执行功能
-- [ ] 终端/控制台
-- [ ] 版本控制集成
-- [ ] 代码自动补全
+### 配置 OpenAI API
+1. 点击底部栏的 AI 按钮打开 AI 面板
+2. 点击设置图标进入 AI 设置
+3. 输入你的 OpenAI API Key
+4. 选择模型（GPT-4, GPT-3.5 Turbo 等）
+5. 配置温度和最大 Token 数
 
-## 与 Mede-IDE 的区别
+### 配置 MCP 服务 (可选)
+MCP (Model Context Protocol) 允许 AI 访问本地工具和资源。
 
-| 功能 | Medecode (VSCode) | Mede-IDE (IDEA) |
-|------|-------------------|-----------------|
-| 定位 | 轻量级代码编辑器 | 完整 IDE |
-| AI 集成 | ❌ | ✅ 本地+云端 |
-| 终端 | ❌ | ✅ 内置 Termux |
-| Git | ❌ | ✅ 完整集成 |
-| 文件树 | ✅ 侧边栏 | ✅ 三栏布局 |
-| 搜索替换 | ✅ | ✅ |
-| 状态栏 | ✅ | ✅ |
-| 命令面板 | ✅ | ❌ |
-| 最近文件 | ✅ | ❌ |
-| 语法高亮 | ✅ | ✅ |
-| 多标签 | ✅ | ✅ |
-| 文件大小 | 轻量 | 较重 |
+## 快捷键/手势
 
-## 相关项目
+| 手势 | 功能 |
+|------|------|
+| 双击 | 快速菜单 |
+| 长按 | 命令面板 |
 
-### [Mede-IDE](https://github.com/Evilgodxu/Mede-IDE)
+## 代码审查流程
 
-[Mede-IDE](https://github.com/Evilgodxu/Mede-IDE) 是一款功能完整的 Android 平台 AI 辅助代码编辑器，采用 Jetpack Compose + Material 3 构建，集成本地大模型推理与云端 LLM API，具备完整的 IDE 基础功能。
+1. 用户向 AI 提出代码修改请求
+2. AI 分析代码并生成修改建议
+3. 系统显示待审查区域，用颜色标记差异：
+   - 🟢 绿色 = 新增/修改的代码
+   - 🔴 红色 = 删除的代码
+4. 用户可以选择：
+   - ✅ **接受** - 应用 AI 的修改
+   - ❌ **拒绝** - 撤销 AI 的修改
 
-- **GitHub**: https://github.com/Evilgodxu/Mede-IDE
-- **定位**: 完整 IDE（类似 IDEA）
-- **特性**: AI 协作、内置终端、Git 集成、MCP 服务器、多媒体预览
+## 许可证
 
-> **关系说明**: Medecode 由同一开发者维护，定位为轻量级代码编辑器（类似 VSCode），专注于提供简洁高效的编码体验。Mede-IDE 则定位为功能完整的 IDE（类似 IDEA），提供 AI 辅助、终端、Git 集成等高级功能。两个项目互补，满足不同场景需求。
-
-## 开发者
-
-- **开发者**: [PFLcoolme](https://github.com/PFLcoolme)
-- **协助者**: [Evilgodxu](https://github.com/Evilgodxu)
+[MIT License](LICENSE)
 
 ## 贡献
 
-欢迎提交 Pull Request 和 Issue！
+欢迎提交 Issue 和 Pull Request！

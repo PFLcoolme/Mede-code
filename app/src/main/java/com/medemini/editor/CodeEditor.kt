@@ -1,4 +1,4 @@
-package com.medecode.editor
+package com.medemini.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -27,7 +27,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.medecode.model.EditorFile
+import com.medemini.model.EditorFile
 
 @Composable
 fun CodeEditor(

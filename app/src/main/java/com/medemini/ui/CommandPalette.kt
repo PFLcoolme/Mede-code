@@ -1,4 +1,4 @@
-package com.medecode.ui
+package com.medemini.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable

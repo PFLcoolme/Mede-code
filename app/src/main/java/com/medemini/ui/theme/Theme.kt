@@ -1,4 +1,4 @@
-package com.medecode.ui.theme
+package com.medemini.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -49,7 +49,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun MedecodeTheme(
+fun MedeMiniTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {

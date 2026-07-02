@@ -1,4 +1,4 @@
-package com.medecode.ui
+package com.medemini.ui
 
 import android.util.Log
 import androidx.compose.foundation.background

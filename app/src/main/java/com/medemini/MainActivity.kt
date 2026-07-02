@@ -1,4 +1,4 @@
-package com.medecode
+package com.medemini
 
 import android.content.Intent
 import android.net.Uri
@@ -37,11 +37,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.medecode.editor.CodeEditor
-import com.medecode.editor.SyntaxHighlight
-import com.medecode.model.EditorFile
-import com.medecode.ui.*
-import com.medecode.ui.theme.MedecodeTheme
+import com.medemini.ai.ui.AIAssistantPanel
+import com.medemini.ai.ui.AISettingsDialog
+import com.medemini.ai.viewmodel.AIViewModel
+import com.medemini.editor.CodeEditor
+import com.medemini.editor.SyntaxHighlight
+import com.medemini.model.EditorFile
+import com.medemini.ui.*
+import com.medemini.ui.theme.MedeMiniTheme
+// import org.jetbrains.compose.ui.tooling.preview.Preview
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -51,9 +55,9 @@ class MainActivity : ComponentActivity() {
         // 请求所有文件访问权限（Android 11+）
         requestStoragePermission()
         setContent {
-            MedecodeTheme {
+            MedeMiniTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = Color.White) {
-                    MedecodeApp()
+                    MedeMiniApp()
                 }
             }
         }
@@ -92,11 +96,16 @@ object AppSettings {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MedecodeApp() {
+fun MedeMiniApp() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val aiViewModel = remember { AIViewModel(context.applicationContext as android.app.Application) }
+    
     var openFiles by remember { mutableStateOf<List<EditorFile>>(emptyList()) }
     var activeFileIndex by remember { mutableStateOf(-1) }
     var showSidebar by remember { mutableStateOf(false) }
+    var showAIChat by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showAISettings by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showCommandPalette by remember { mutableStateOf(false) }
     var projectPath by remember { mutableStateOf("") }
@@ -111,7 +120,11 @@ fun MedecodeApp() {
 
     val recentManager = rememberRecentFileManager()
     val activeFile = if (activeFileIndex >= 0 && activeFileIndex < openFiles.size) openFiles[activeFileIndex] else null
-    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // 同步 AI 聊天显示状态
+    LaunchedEffect(aiViewModel.showAIChat.value) {
+        aiViewModel.showAIChat.collect { showAIChat = it }
+    }
 
     fun openFile(name: String, path: String, content: String) {
         val editorFile = EditorFile(name = name, path = path, content = content)
@@ -208,46 +221,83 @@ fun MedecodeApp() {
                 }
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // 编辑器区域
-                Box(modifier = Modifier.weight(1f).fillMaxWidth().background(AppSettings.editorBgColor)) {
-                    activeFile?.let { file ->
-                        CodeEditor(editorFile = file, onContentChange = { newContent ->
-                            openFiles = openFiles.map { if (it == file) it.copy(content = newContent) else it }
-                        }, modifier = Modifier.fillMaxSize())
-                    }
-
-                    // 右侧半透明浮动侧边栏
-                    if (showSidebar) {
-                        Box(
-                            modifier = Modifier.fillMaxHeight().width(180.dp)
-                                .align(Alignment.TopEnd)
-                                .background(Color.White.copy(alpha = 0.2f))
-                        ) {
-                            Sidebar(
-                                projectPath = projectPath,
-                                onFileSelected = { path, name ->
-                                    try {
-                                        val content = File(path).readText()
-                                        openFile(name, path, content)
-                                    } catch (_: Exception) {}
-                                },
-                                onProjectPathChange = { projectPath = it },
-                                modifier = Modifier.fillMaxSize(),
-                                sidebarWidth = 180.dp
+                // 主内容区域
+                Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    // 编辑器主区域
+                    Box(modifier = Modifier.weight(1f).fillMaxSize().background(AppSettings.editorBgColor)) {
+                        activeFile?.let { file ->
+                            CodeEditor(
+                                editorFile = file, 
+                                onContentChange = { newContent ->
+                                    openFiles = openFiles.map { if (it == file) it.copy(content = newContent) else it }
+                                }, 
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
                     }
+                
+                    // AI 助手面板
+                    if (showAIChat) {
+                        AIAssistantPanel(
+                            viewModel = aiViewModel,
+                            currentFileContent = activeFile?.content,
+                            currentFilePath = activeFile?.path,
+                            onShowSettings = { showAISettings = true }
+                        )
+                    }
                 }
-
-                FluidTabBar(
-                    openFiles = openFiles, activeFileIndex = activeFileIndex,
-                    onTabClick = { activeFileIndex = it },
-                    onTabClose = { index ->
-                        openFiles = openFiles.toMutableList().apply { removeAt(index) }
-                        if (activeFileIndex >= openFiles.size) activeFileIndex = (openFiles.size - 1).coerceAtLeast(-1)
-                    },
-                    onSettingsClick = { showSettings = true }
-                )
+            
+                // 底部标签栏和 AI 切换按钮
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    FluidTabBar(
+                        openFiles = openFiles, 
+                        activeFileIndex = activeFileIndex,
+                        onTabClick = { activeFileIndex = it },
+                        onTabClose = { index ->
+                            openFiles = openFiles.toMutableList().apply { removeAt(index) }
+                            if (activeFileIndex >= openFiles.size) activeFileIndex = (openFiles.size - 1).coerceAtLeast(-1)
+                        },
+                        onSettingsClick = { showSettings = true }
+                    )
+                
+                    Spacer(modifier = Modifier.weight(1f))
+                
+                    // 侧边栏切换按钮
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .clip(RoundedCornerShape(13.dp))
+                            .background(if (showSidebar) Color(0xFF666666) else Color(0xFF999999).copy(alpha = 0.8f))
+                            .clickable { showSidebar = !showSidebar },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Menu, 
+                            "侧边栏", 
+                            modifier = Modifier.size(14.dp), 
+                            tint = Color.White
+                        )
+                    }
+                
+                    Spacer(modifier = Modifier.width(6.dp))
+                
+                    // AI 切换按钮
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .clip(RoundedCornerShape(13.dp))
+                            .background(if (showAIChat) Color(0xFF6344CF) else Color(0xFF333333).copy(alpha = 0.8f))
+                            .clickable { showAIChat = !showAIChat },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.AutoFixHigh, 
+                            "AI助手", 
+                            modifier = Modifier.size(14.dp), 
+                            tint = Color.White
+                        )
+                    }
+                }
             }
 
             if (showMenu) {
@@ -261,6 +311,7 @@ fun MedecodeApp() {
                     DropdownMenuItem(text = { Text("另存为...", fontSize = 13.sp) }, onClick = { showMenu = false; activeFile?.let { saveFileLauncher.launch(it.name) } })
                     Divider()
                     DropdownMenuItem(text = { Text(if (showSidebar) "隐藏侧边栏" else "显示侧边栏", fontSize = 13.sp) }, onClick = { showMenu = false; showSidebar = !showSidebar })
+                    DropdownMenuItem(text = { Text(if (showAIChat) "隐藏 AI" else "显示 AI", fontSize = 13.sp) }, onClick = { showMenu = false; showAIChat = !showAIChat })
                     DropdownMenuItem(text = { Text("设置", fontSize = 13.sp) }, onClick = { showMenu = false; showSettings = true })
                     Divider()
                     DropdownMenuItem(text = { Text("关闭文件", fontSize = 13.sp) }, onClick = {
@@ -286,8 +337,15 @@ fun MedecodeApp() {
         )
     }
 
-    if (showSettings) {
+            if (showSettings) {
         SettingsDialog(onDismiss = { showSettings = false })
+    }
+    
+    if (showAISettings) {
+        AISettingsDialog(
+            viewModel = aiViewModel,
+            onDismiss = { showAISettings = false }
+        )
     }
 }
 
@@ -411,7 +469,7 @@ private fun WelcomeScreen(
             Icon(Icons.Default.Code, null, modifier = Modifier.size(48.dp), tint = Color.Black)
         }
         Spacer(modifier = Modifier.height(24.dp))
-        Text("MemeMini", style = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.Black))
+        Text("MedeMini", style = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.Black))
         Text("Android Code Editor", style = TextStyle(fontSize = 14.sp, color = Color.Black.copy(0.6f)))
         Spacer(modifier = Modifier.height(48.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {

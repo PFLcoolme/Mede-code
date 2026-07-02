@@ -1,4 +1,4 @@
-package com.medecode.editor
+package com.medemini.editor
 
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -6,7 +6,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.graphics.Color
-import com.medecode.model.Language
+import com.medemini.model.Language
 
 object SyntaxHighlight {
 

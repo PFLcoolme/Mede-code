@@ -1,4 +1,4 @@
-package com.medecode.model
+package com.medemini.model
 
 /**
  * Represents an open file in the editor
