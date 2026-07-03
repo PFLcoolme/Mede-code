@@ -12,11 +12,9 @@
     native <methods>;
 }
 
-# Keep BuiltInModel data class
--keep class com.medemini.ai.model.BuiltInModel { *; }
-
-# Keep ModelProvider interface
--keep interface com.medemini.ai.model.BuiltInModelProvider { *; }
+# Keep SecureKeyStore - 保护 API Key
+-keep class com.medemini.ai.native.SecureKeyStore { *; }
+-dontwarn com.medemini.ai.native.SecureKeyStore
 
 # Keep AI API service
 -keep interface com.medemini.ai.api.AIService { *; }

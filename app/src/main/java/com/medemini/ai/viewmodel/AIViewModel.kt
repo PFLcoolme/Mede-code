@@ -9,6 +9,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import com.medemini.ai.api.*
+import com.medemini.ai.native.SecureKeyStore
 import com.medemini.model.EditorFile
 import retrofit2.Call
 import retrofit2.Retrofit
@@ -148,9 +149,16 @@ class AIViewModel : ViewModel() {
     }
 
     fun sendMessage(userMessage: String) {
+        // 优先使用内置密钥，如果没有内置密钥则使用用户配置的
         if (config.value.apiKey.isEmpty()) {
-            addSystemMessage("请先在设置中配置API Key")
-            return
+        
+        val builtInKey = SecureKeyStore.getRandomKey()
+            if (builtInKey.isNotEmpty()) {
+                config.value = config.value.copy(apiKey = builtInKey)
+            } else {
+                addSystemMessage("暂无可用的API Key")
+                return
+            }
         }
 
         if (!::aiService.isInitialized) {
@@ -233,9 +241,11 @@ class AIViewModel : ViewModel() {
             "${baseUrl}/chat/completions"
         }
         
+        // 每次请求轮换使用不同的密钥
+        val currentKey = config.value.apiKey
         val call = aiService.chatCompletion(
             fullUrl,
-            "Bearer ${config.value.apiKey}",
+            "Bearer $currentKey",
             request
         )
 
