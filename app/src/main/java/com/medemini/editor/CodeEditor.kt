@@ -33,7 +33,9 @@ import com.medemini.model.EditorFile
 fun CodeEditor(
     editorFile: EditorFile,
     onContentChange: (String) -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isReviewMode: Boolean = false,
+    diffAnnotatedString: AnnotatedString? = null
 ) {
     val darkTheme = isSystemInDarkTheme()
 
@@ -193,10 +195,13 @@ fun CodeEditor(
                         textAlign = TextAlign.Left
                     ),
                     visualTransformation = { text ->
-                        // 使用语法高亮的 AnnotatedString
-                        val annotated = SyntaxHighlight.highlightCode(text.text, editorFile.language)
+                        val baseAnnotated = if (isReviewMode && diffAnnotatedString != null) {
+                            diffAnnotatedString
+                        } else {
+                            SyntaxHighlight.highlightCode(text.text, editorFile.language)
+                        }
                         androidx.compose.ui.text.input.TransformedText(
-                            annotated,
+                            baseAnnotated,
                             androidx.compose.ui.text.input.OffsetMapping.Identity
                         )
                     },

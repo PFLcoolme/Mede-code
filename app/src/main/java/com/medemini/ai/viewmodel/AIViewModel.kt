@@ -2,6 +2,11 @@ package com.medemini.ai.viewmodel
 
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import com.medemini.ai.api.*
 import com.medemini.ai.model.*
@@ -18,13 +23,115 @@ class AIViewModel : ViewModel() {
     val isLoading = mutableStateOf(false)
     val config = mutableStateOf(AIConfig())
     val pendingChanges = mutableStateListOf<CodeChange>()
+    val pendingFileChanges = mutableStateListOf<FileChange>()
     val showReviewPanel = mutableStateOf(false)
+    val reviewMode = mutableStateOf(false)
+    val currentReviewFilePath = mutableStateOf("")
+
+    private val DEFAULT_SYSTEM_PROMPT = """
+你是一个运行在 MedeMini 移动代码编辑器中的编程智能体。
+
+【你的环境】
+- 你运行在 Android 平台上的 MedeMini 代码编辑器中
+- 用户正在编辑一个项目，项目路径: {PROJECT_PATH}
+- 所有文件操作都相对于项目路径进行
+
+【你的能力】
+你可以调用以下工具来操作文件和代码：
+
+=== 文件操作 ===
+- list_files: 列出目录中的文件和子目录
+- search_files: 在项目中搜索文件
+- read_file: 读取文件内容
+- write_file: 写入文件内容（会覆盖原有内容）
+- create_file: 创建新文件
+- delete_file: 删除文件
+- copy_file: 复制文件
+- move_file: 移动文件
+- get_file_info: 获取文件详细信息
+- create_directory: 创建目录
+
+=== 代码编辑 ===
+- insert_line: 在指定行号插入代码行
+- delete_line: 删除指定行号的代码
+- replace_line: 替换指定行号的代码
+- replace_range: 替换指定行号范围的代码
+
+=== 代码分析 ===
+- find_references: 查找符号引用（需要索引支持）
+- analyze_code: 分析代码结构
+- get_project_structure: 获取项目结构
+- count_lines: 统计代码行数
+- check_syntax: 检查语法错误
+- analyze_complexity: 分析代码复杂度
+
+=== 构建工具 ===
+- run_command: 运行系统命令
+- build_project: 构建项目
+- run_tests: 运行测试
+- check_dependencies: 检查依赖
+
+=== Git 操作 ===
+- git_status: 查看 Git 状态
+- git_diff: 查看 Git 差异
+- git_commit: 提交代码
+- git_push: 推送代码
+- git_pull: 拉取代码
+- git_log: 查看提交日志
+
+=== UI 操作 ===
+- show_toast: 显示提示消息
+- set_title: 设置标题
+
+=== 通用工具 ===
+- calculate: 数学计算
+- format_json: 格式化 JSON
+- format_xml: 格式化 XML
+- convert_case: 转换大小写
+- trim_whitespace: 去除空白
+- generate_uuid: 生成 UUID
+- encode_base64: Base64 编码
+- decode_base64: Base64 解码
+- url_encode: URL 编码
+- url_decode: URL 解码
+- hash_md5: MD5 哈希
+- hash_sha256: SHA256 哈希
+- validate_email: 验证邮箱
+- validate_url: 验证 URL
+- parse_date: 解析日期
+- format_date: 格式化日期
+- translate_code: 代码翻译
+
+【工作流程】
+1. 用户提出需求或问题
+2. 你分析需求，决定是否需要调用工具
+3. 如果需要操作文件，先使用 list_files 或 search_files 找到目标文件
+4. 使用 read_file 读取文件内容
+5. 使用代码编辑工具修改代码（insert_line/delete_line/replace_line/replace_range）
+6. 用户会审查你的修改，决定接受或拒绝
+7. 最后给出完整的总结
+
+【注意事项】
+- 所有路径参数都使用相对路径（相对于项目路径）
+- 行号从 1 开始计数
+- 修改代码时要谨慎，确保语法正确
+- 如果文件不存在，先使用 create_file 创建
+- 代码修改会进入待审查状态，用户确认后才会真正生效
+- 请按照以下格式回答：
+[思考]你的思考过程...[/思考]
+[回答]你的最终回答...[/回答]
+"""
 
     private lateinit var aiService: AIService
     private var currentEditorFile: EditorFile? = null
+    private var projectPath: String = ""
 
     fun setCurrentFile(file: EditorFile?) {
         currentEditorFile = file
+    }
+
+    fun setProjectPath(path: String) {
+        projectPath = path
     }
 
     fun initService() {
@@ -39,6 +146,19 @@ class AIViewModel : ViewModel() {
         if (config.value.apiKey.isEmpty()) {
             addSystemMessage("请先在设置中配置API Key")
             return
+        }
+
+        if (!::aiService.isInitialized) {
+            initService()
+        }
+
+        if (messages.isEmpty()) {
+            val prompt = DEFAULT_SYSTEM_PROMPT.replace("{PROJECT_PATH}", if (projectPath.isNotEmpty()) projectPath else "未设置")
+            messages.add(AIMessage(
+                id = UUID.randomUUID().toString(),
+                role = "system",
+                content = prompt
+            ))
         }
 
         val userMsg = AIMessage(
@@ -160,13 +280,38 @@ class AIViewModel : ViewModel() {
 
             executeToolCalls(toolCalls)
         } else {
+            val content = message.content ?: ""
+            val (thinking, reply) = parseThinkingAndReply(content)
             val aiMsg = AIMessage(
                 id = UUID.randomUUID().toString(),
                 role = "assistant",
-                content = message.content ?: ""
+                content = reply,
+                thinking = thinking.takeIf { it.isNotEmpty() }
             )
             messages.add(aiMsg)
         }
+    }
+
+    private fun parseThinkingAndReply(content: String): Pair<String, String> {
+        val thinkingStart = content.indexOf("[思考]")
+        val thinkingEnd = content.indexOf("[/思考]")
+        val replyStart = content.indexOf("[回答]")
+        val replyEnd = content.indexOf("[/回答]")
+
+        var thinking = ""
+        var reply = content
+
+        if (thinkingStart >= 0 && thinkingEnd > thinkingStart) {
+            thinking = content.substring(thinkingStart + 4, thinkingEnd).trim()
+        }
+
+        if (replyStart >= 0 && replyEnd > replyStart) {
+            reply = content.substring(replyStart + 4, replyEnd).trim()
+        } else if (thinking.isNotEmpty()) {
+            reply = content.replace("[思考]$thinking[/思考]", "").trim()
+        }
+
+        return Pair(thinking, reply)
     }
 
     private fun parseArguments(argsJson: String): Map<String, String> {
@@ -184,14 +329,21 @@ class AIViewModel : ViewModel() {
 
         toolCalls.forEach { toolCall ->
             val result = executeTool(toolCall.function.name, toolCall.function.arguments)
-            results.add(ToolResult(toolCall.id, toolCall.function.name, result))
+            val isSuccess = !result.startsWith("文件不存在") && !result.startsWith("目录不存在") && 
+                            !result.startsWith("参数错误") && !result.startsWith("不是目录") &&
+                            !result.startsWith("读取文件失败") && !result.startsWith("写入文件失败") &&
+                            !result.startsWith("删除文件失败") && !result.startsWith("创建文件失败") &&
+                            !result.startsWith("列出文件失败") && !result.startsWith("搜索文件失败") &&
+                            !result.startsWith("创建目录失败")
+            results.add(ToolResult(toolCall.id, toolCall.function.name, result, isSuccess))
         }
 
         results.forEach { result ->
             val toolMsg = AIMessage(
                 id = UUID.randomUUID().toString(),
                 role = "tool",
-                content = if (result.success) result.content else "工具调用失败: ${result.content}"
+                content = if (result.success) result.content else "工具调用失败: ${result.content}",
+                toolCallId = result.toolCallId
             )
             messages.add(toolMsg)
         }
@@ -262,20 +414,27 @@ class AIViewModel : ViewModel() {
     }
 
     private fun readFile(filePath: String?): String {
-        if (filePath == null) return "参数错误"
+        val resolvedPath = resolvePath(filePath)
+        if (resolvedPath == null) return "未设置项目路径，请先打开一个项目"
         return try {
-            File(filePath).readText()
+            val file = File(resolvedPath)
+            if (!file.exists()) {
+                return "文件不存在: $resolvedPath"
+            }
+            file.readText()
         } catch (e: Exception) {
             "读取文件失败: ${e.message}"
         }
     }
 
     private fun writeFile(filePath: String?, content: String?): String {
-        if (filePath == null || content == null) return "参数错误"
+        if (content == null) return "参数错误"
+        val resolvedPath = resolvePath(filePath)
+        if (resolvedPath == null) return "未设置项目路径，请先打开一个项目"
         return try {
-            File(filePath).writeText(content)
+            File(resolvedPath).writeText(content)
             currentEditorFile?.let {
-                if (it.path == filePath) {
+                if (it.path == filePath || it.path == resolvedPath) {
                     it.content = content
                 }
             }
@@ -286,9 +445,10 @@ class AIViewModel : ViewModel() {
     }
 
     private fun createFile(filePath: String?, content: String?): String {
-        if (filePath == null) return "参数错误"
+        val resolvedPath = resolvePath(filePath)
+        if (resolvedPath == null) return "未设置项目路径，请先打开一个项目"
         return try {
-            File(filePath).writeText(content ?: "")
+            File(resolvedPath).writeText(content ?: "")
             "文件创建成功"
         } catch (e: Exception) {
             "创建文件失败: ${e.message}"
@@ -296,9 +456,10 @@ class AIViewModel : ViewModel() {
     }
 
     private fun deleteFile(filePath: String?): String {
-        if (filePath == null) return "参数错误"
+        val resolvedPath = resolvePath(filePath)
+        if (resolvedPath == null) return "未设置项目路径，请先打开一个项目"
         return try {
-            File(filePath).delete()
+            File(resolvedPath).delete()
             "文件删除成功"
         } catch (e: Exception) {
             "删除文件失败: ${e.message}"
@@ -306,9 +467,27 @@ class AIViewModel : ViewModel() {
     }
 
     private fun listFiles(directory: String?): String {
-        val dir = File(directory ?: ".")
+        val resolvedPath = resolvePath(directory)
+        if (resolvedPath.isNullOrEmpty()) {
+            return "未设置项目路径，请先打开一个项目"
+        }
+        val dir = File(resolvedPath)
         return try {
-            dir.listFiles()?.joinToString("\n") { it.name } ?: "目录为空"
+            if (!dir.exists()) {
+                return "目录不存在: $resolvedPath"
+            }
+            if (!dir.isDirectory) {
+                return "不是目录: $resolvedPath"
+            }
+            val files = dir.listFiles()
+            if (files == null || files.isEmpty()) {
+                "目录为空: $resolvedPath"
+            } else {
+                files.sortedBy { it.name.lowercase() }.joinToString("\n") {
+                    val type = if (it.isDirectory) "[DIR]" else "[FILE]"
+                    "$type ${it.name}"
+                }
+            }
         } catch (e: Exception) {
             "列出文件失败: ${e.message}"
         }
@@ -316,7 +495,11 @@ class AIViewModel : ViewModel() {
 
     private fun searchFiles(pattern: String?, directory: String?): String {
         if (pattern == null) return "参数错误"
-        val dir = File(directory ?: ".")
+        val resolvedPath = resolvePath(directory)
+        if (resolvedPath.isNullOrEmpty()) {
+            return "未设置项目路径，请先打开一个项目"
+        }
+        val dir = File(resolvedPath)
         return try {
             dir.walk()
                 .filter { it.isFile && it.readText().contains(pattern) }
@@ -328,8 +511,11 @@ class AIViewModel : ViewModel() {
 
     private fun copyFile(source: String?, destination: String?): String {
         if (source == null || destination == null) return "参数错误"
+        val srcPath = resolvePath(source)
+        val destPath = resolvePath(destination)
+        if (srcPath == null || destPath == null) return "未设置项目路径，请先打开一个项目"
         return try {
-            File(source).copyTo(File(destination), overwrite = true)
+            File(srcPath).copyTo(File(destPath), overwrite = true)
             "文件复制成功"
         } catch (e: Exception) {
             "复制文件失败: ${e.message}"
@@ -338,8 +524,11 @@ class AIViewModel : ViewModel() {
 
     private fun moveFile(source: String?, destination: String?): String {
         if (source == null || destination == null) return "参数错误"
+        val srcPath = resolvePath(source)
+        val destPath = resolvePath(destination)
+        if (srcPath == null || destPath == null) return "未设置项目路径，请先打开一个项目"
         return try {
-            File(source).renameTo(File(destination))
+            File(srcPath).renameTo(File(destPath))
             "文件移动成功"
         } catch (e: Exception) {
             "移动文件失败: ${e.message}"
@@ -347,9 +536,10 @@ class AIViewModel : ViewModel() {
     }
 
     private fun getFileInfo(filePath: String?): String {
-        if (filePath == null) return "参数错误"
+        val resolvedPath = resolvePath(filePath)
+        if (resolvedPath == null) return "未设置项目路径，请先打开一个项目"
         return try {
-            val file = File(filePath)
+            val file = File(resolvedPath)
             "名称: ${file.name}\n路径: ${file.path}\n大小: ${file.length()} 字节\n修改时间: ${file.lastModified()}"
         } catch (e: Exception) {
             "获取文件信息失败: ${e.message}"
@@ -357,9 +547,10 @@ class AIViewModel : ViewModel() {
     }
 
     private fun createDirectory(directoryPath: String?): String {
-        if (directoryPath == null) return "参数错误"
+        val resolvedPath = resolvePath(directoryPath)
+        if (resolvedPath == null) return "未设置项目路径，请先打开一个项目"
         return try {
-            File(directoryPath).mkdirs()
+            File(resolvedPath).mkdirs()
             "目录创建成功"
         } catch (e: Exception) {
             "创建目录失败: ${e.message}"
@@ -367,78 +558,104 @@ class AIViewModel : ViewModel() {
     }
 
     private fun insertLine(filePath: String?, lineNumber: String?, content: String?): String {
-        if (filePath == null || lineNumber == null || content == null) return "参数错误"
+        if (lineNumber == null || content == null) return "参数错误"
+        val resolvedPath = resolvePath(filePath)
+        if (resolvedPath == null) return "未设置项目路径，请先打开一个项目"
         return try {
-            val lines = File(filePath).readLines().toMutableList()
-            val line = lineNumber.toIntOrNull() ?: return "无效行号"
-            lines.add(line.coerceIn(0, lines.size), content)
-            File(filePath).writeText(lines.joinToString("\n"))
-            recordCodeChange(ChangeType.INSERT, line, "", content)
-            "代码插入成功"
+            val file = File(resolvedPath)
+            val originalContent = file.readText()
+            val lines = file.readLines().toMutableList()
+            val line = parseLineNumber(lineNumber, lines.size) ?: return "无效行号"
+            val change = CodeChange(ChangeType.INSERT, line, "", content, 0, 0)
+            lines.add(line, content)
+            val newContent = lines.joinToString("\n")
+            pendingFileChanges.add(FileChange(resolvedPath, originalContent, newContent, listOf(change)))
+            pendingChanges.add(change)
+            reviewMode.value = true
+            currentReviewFilePath.value = resolvedPath
+            "代码插入成功（待审查）"
         } catch (e: Exception) {
             "插入代码失败: ${e.message}"
         }
     }
 
     private fun deleteLine(filePath: String?, lineNumber: String?, count: String?): String {
-        if (filePath == null || lineNumber == null) return "参数错误"
+        if (lineNumber == null) return "参数错误"
+        val resolvedPath = resolvePath(filePath)
+        if (resolvedPath == null) return "未设置项目路径，请先打开一个项目"
         return try {
-            val lines = File(filePath).readLines().toMutableList()
-            val line = lineNumber.toIntOrNull() ?: return "无效行号"
+            val file = File(resolvedPath)
+            val originalContent = file.readText()
+            val lines = file.readLines().toMutableList()
+            val line = parseLineNumber(lineNumber, lines.size - 1) ?: return "无效行号"
             val deleteCount = count?.toIntOrNull() ?: 1
-            val startIdx = line.coerceIn(0, lines.size)
+            val startIdx = line
             val endIdx = (startIdx + deleteCount).coerceAtMost(lines.size)
             val deletedLines = lines.subList(startIdx, endIdx)
+            val lineChanges = mutableListOf<CodeChange>()
             deletedLines.forEachIndexed { i, oldContent ->
-                recordCodeChange(ChangeType.DELETE, startIdx + i, oldContent, "")
+                lineChanges.add(CodeChange(ChangeType.DELETE, startIdx + i, oldContent, "", 0, 0))
             }
             lines.subList(startIdx, endIdx).clear()
-            File(filePath).writeText(lines.joinToString("\n"))
-            "删除成功"
+            val newContent = lines.joinToString("\n")
+            pendingFileChanges.add(FileChange(resolvedPath, originalContent, newContent, lineChanges))
+            pendingChanges.addAll(lineChanges)
+            reviewMode.value = true
+            currentReviewFilePath.value = resolvedPath
+            "删除成功（待审查）"
         } catch (e: Exception) {
             "删除代码失败: ${e.message}"
         }
     }
 
     private fun replaceLine(filePath: String?, lineNumber: String?, content: String?): String {
-        if (filePath == null || lineNumber == null || content == null) return "参数错误"
+        if (lineNumber == null || content == null) return "参数错误"
+        val resolvedPath = resolvePath(filePath)
+        if (resolvedPath == null) return "未设置项目路径，请先打开一个项目"
         return try {
-            val lines = File(filePath).readLines().toMutableList()
-            val line = lineNumber.toIntOrNull() ?: return "无效行号"
-            if (line >= lines.size) return "行号超出范围"
+            val file = File(resolvedPath)
+            val originalContent = file.readText()
+            val lines = file.readLines().toMutableList()
+            val line = parseLineNumber(lineNumber, lines.size - 1) ?: return "无效行号"
             val oldContent = lines[line]
+            val change = CodeChange(ChangeType.MODIFY, line, oldContent, content, 0, 0)
             lines[line] = content
-            File(filePath).writeText(lines.joinToString("\n"))
-            recordCodeChange(ChangeType.MODIFY, line, oldContent, content)
-            "替换成功"
+            val newContent = lines.joinToString("\n")
+            pendingFileChanges.add(FileChange(resolvedPath, originalContent, newContent, listOf(change)))
+            pendingChanges.add(change)
+            reviewMode.value = true
+            currentReviewFilePath.value = resolvedPath
+            "替换成功（待审查）"
         } catch (e: Exception) {
             "替换代码失败: ${e.message}"
         }
     }
 
     private fun replaceRange(filePath: String?, startLine: String?, endLine: String?, content: String?): String {
-        if (filePath == null || startLine == null || endLine == null || content == null) return "参数错误"
+        if (startLine == null || endLine == null || content == null) return "参数错误"
+        val resolvedPath = resolvePath(filePath)
+        if (resolvedPath == null) return "未设置项目路径，请先打开一个项目"
         return try {
-            val lines = File(filePath).readLines().toMutableList()
-            val start = startLine.toIntOrNull() ?: return "无效起始行号"
-            val end = endLine.toIntOrNull() ?: return "无效结束行号"
-            val oldContent = lines.subList(start, end + 1).joinToString("\n")
-            lines.subList(start, end + 1).clear()
+            val file = File(resolvedPath)
+            val originalContent = file.readText()
+            val lines = file.readLines().toMutableList()
+            val start = parseLineNumber(startLine, lines.size - 1) ?: return "无效起始行号"
+            val end = parseLineNumber(endLine, lines.size - 1) ?: return "无效结束行号"
+            val effectiveEnd = end.coerceAtLeast(start)
+            val oldContent = lines.subList(start, effectiveEnd + 1).joinToString("\n")
+            val change = CodeChange(ChangeType.MODIFY, start, oldContent, content, 0, 0)
+            lines.subList(start, effectiveEnd + 1).clear()
             content.lines().forEachIndexed { i, line ->
                 lines.add(start + i, line)
             }
-            File(filePath).writeText(lines.joinToString("\n"))
-            recordCodeChange(ChangeType.MODIFY, start, oldContent, content)
-            "范围替换成功"
+            val newContent = lines.joinToString("\n")
+            pendingFileChanges.add(FileChange(resolvedPath, originalContent, newContent, listOf(change)))
+            pendingChanges.add(change)
+            reviewMode.value = true
+            currentReviewFilePath.value = resolvedPath
+            "范围替换成功（待审查）"
         } catch (e: Exception) {
             "范围替换失败: ${e.message}"
-        }
-    }
-
-    private fun recordCodeChange(type: ChangeType, lineNumber: Int, oldContent: String, newContent: String) {
-        pendingChanges.add(CodeChange(type, lineNumber, oldContent, newContent, 0, 0))
-        if (pendingChanges.isNotEmpty()) {
-            showReviewPanel.value = true
         }
     }
 
@@ -853,6 +1070,30 @@ class AIViewModel : ViewModel() {
         return "代码转换需要AI支持"
     }
 
+    private fun resolvePath(path: String?): String? {
+        if (path.isNullOrEmpty()) {
+            return projectPath.takeIf { it.isNotEmpty() }
+        }
+        return if (path.startsWith("/")) {
+            path
+        } else {
+            if (projectPath.isEmpty()) {
+                null
+            } else {
+                File(projectPath, path).absolutePath
+            }
+        }
+    }
+
+    private fun parseLineNumber(lineStr: String?, maxLine: Int): Int? {
+        if (lineStr.isNullOrEmpty()) return null
+        val cleaned = lineStr.replace(Regex("[^0-9]"), "").trim()
+        if (cleaned.isEmpty()) return null
+        val line = cleaned.toIntOrNull() ?: return null
+        val adjustedLine = if (line > 0) line - 1 else line
+        return adjustedLine.coerceIn(0, maxLine)
+    }
+
     private fun addSystemMessage(content: String) {
         messages.add(AIMessage(
             id = UUID.randomUUID().toString(),
@@ -862,16 +1103,77 @@ class AIViewModel : ViewModel() {
     }
 
     fun acceptChanges() {
+        pendingFileChanges.forEach { fileChange ->
+            try {
+                File(fileChange.filePath).writeText(fileChange.newContent)
+                currentEditorFile?.let { editorFile ->
+                    if (editorFile.path == fileChange.filePath) {
+                        editorFile.content = fileChange.newContent
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        pendingFileChanges.clear()
         pendingChanges.clear()
         showReviewPanel.value = false
+        reviewMode.value = false
+        currentReviewFilePath.value = ""
     }
 
     fun rejectChanges() {
+        pendingFileChanges.clear()
         pendingChanges.clear()
         showReviewPanel.value = false
+        reviewMode.value = false
+        currentReviewFilePath.value = ""
     }
 
     fun clearMessages() {
         messages.clear()
+    }
+
+    fun getReviewContent(filePath: String): String {
+        val fileChange = pendingFileChanges.find { it.filePath == filePath }
+        return fileChange?.newContent ?: ""
+    }
+
+    fun getOriginalContent(filePath: String): String {
+        val fileChange = pendingFileChanges.find { it.filePath == filePath }
+        return fileChange?.originalContent ?: ""
+    }
+
+    fun getDiffAnnotatedString(filePath: String): AnnotatedString {
+        val fileChange = pendingFileChanges.find { it.filePath == filePath } ?: return AnnotatedString("")
+        
+        val newLines = fileChange.newContent.lines()
+        val changes = fileChange.lineChanges
+        
+        return buildAnnotatedString {
+            val insertColor = SpanStyle(background = Color(0xFF4CAF50).copy(alpha = 0.25f))
+            val deleteColor = SpanStyle(background = Color(0xFFF44336).copy(alpha = 0.25f))
+            val modifyColor = SpanStyle(background = Color(0xFFFF9800).copy(alpha = 0.25f))
+            
+            val changeMap = mutableMapOf<Int, CodeChange>()
+            changes.forEach { change ->
+                when (change.type) {
+                    ChangeType.INSERT -> changeMap[change.lineNumber] = change
+                    ChangeType.DELETE -> {}
+                    ChangeType.MODIFY -> changeMap[change.lineNumber] = change
+                }
+            }
+            
+            newLines.forEachIndexed { index, line ->
+                val change = changeMap[index]
+                if (change != null) {
+                    when (change.type) {
+                        ChangeType.INSERT -> withStyle(insertColor) { append(line + "\n") }
+                        ChangeType.MODIFY -> withStyle(modifyColor) { append(line + "\n") }
+                        else -> append(line + "\n")
+                    }
+                } else {
+                    append(line + "\n")
+                }
+            }
+        }
     }
 }

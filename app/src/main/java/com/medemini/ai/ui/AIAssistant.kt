@@ -193,6 +193,24 @@ private fun MessageBubble(message: AIMessage) {
                 .padding(8.dp)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
+                if (message.thinking != null && message.thinking.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().background(Color(0xFF1A1A1A), RoundedCornerShape(6.dp)).padding(6.dp)
+                    ) {
+                        Column {
+                            Text(
+                                "思考:",
+                                style = TextStyle(fontSize = 9.sp, color = Color(0xFF888888), fontWeight = FontWeight.Bold)
+                            )
+                            Text(
+                                message.thinking,
+                                style = TextStyle(fontSize = 10.sp, color = Color(0xFF888888), lineHeight = 14.sp),
+                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
                 if (message.content.isNotEmpty()) {
                     Text(
                         message.content,

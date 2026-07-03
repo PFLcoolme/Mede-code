@@ -4,7 +4,9 @@ data class AIMessage(
     val id: String,
     val role: String,
     val content: String,
+    val thinking: String? = null,
     val toolCalls: List<ToolCall>? = null,
+    val toolCallId: String? = null,
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -33,6 +35,13 @@ data class CodeChange(
     val newContent: String,
     val startOffset: Int,
     val endOffset: Int
+)
+
+data class FileChange(
+    val filePath: String,
+    val originalContent: String,
+    val newContent: String,
+    val lineChanges: List<CodeChange>
 )
 
 enum class ChangeType {

@@ -111,6 +111,7 @@ fun MedeMiniApp() {
     var projectPath by remember { mutableStateOf("") }
 
     val aiViewModel = remember { AIViewModel() }
+    val appStateManager = remember { AppStateManager(context) }
 
     // 同步高亮配色
     LaunchedEffect(AppSettings.keywordColor) { SyntaxHighlight.keywordColor = AppSettings.keywordColor }
@@ -123,16 +124,49 @@ fun MedeMiniApp() {
     val recentManager = rememberRecentFileManager()
     val activeFile = if (activeFileIndex >= 0 && activeFileIndex < openFiles.size) openFiles[activeFileIndex] else null
 
+    LaunchedEffect(Unit) {
+        try {
+            if (appStateManager.hasSavedState()) {
+                val savedProjectPath = appStateManager.projectPath
+                if (File(savedProjectPath).exists() && File(savedProjectPath).isDirectory) {
+                    projectPath = savedProjectPath
+                    aiViewModel.setProjectPath(savedProjectPath)
+                    aiViewModel.config.value = appStateManager.loadAIConfig()
+                    
+                    if (appStateManager.activeFilePath.isNotEmpty()) {
+                        val file = File(appStateManager.activeFilePath)
+                        if (file.exists() && file.isFile) {
+                            val content = try {
+                                file.readText()
+                            } catch (_: Exception) {
+                                appStateManager.activeFileContent
+                            }
+                            val editorFile = EditorFile(name = appStateManager.activeFileName, path = appStateManager.activeFilePath, content = content)
+                            openFiles = listOf(editorFile)
+                            activeFileIndex = 0
+                            showSidebar = true
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     fun openFile(name: String, path: String, content: String) {
         val editorFile = EditorFile(name = name, path = path, content = content)
         val existingIndex = openFiles.indexOfFirst { it.path == path }
         if (existingIndex >= 0) {
             activeFileIndex = existingIndex
+            openFiles[existingIndex].content = content
         } else {
             openFiles = openFiles.toMutableList().apply { add(editorFile) }
             activeFileIndex = openFiles.size - 1
         }
         recentManager.addFile(path, name)
+        if (projectPath.isNotEmpty()) {
+            appStateManager.saveEditorState(projectPath, path, name, content)
+        }
     }
 
     val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -155,6 +189,9 @@ fun MedeMiniApp() {
                     } else path ?: ""
                 } catch (_: Exception) { path ?: "" }
                 projectPath = realPath
+                aiViewModel.setProjectPath(realPath)
+                appStateManager.projectPath = realPath
+                appStateManager.addRecentProject(RecentProject(realPath, realPath.substringAfterLast('/')))
                 showSidebar = true
 
                 val treeDocId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
@@ -232,9 +269,38 @@ fun MedeMiniApp() {
         WelcomeScreen(
             onOpenProject = { projectLauncher.launch(null) },
             onOpenFile = { fileLauncher.launch(arrayOf("text/*")) },
-            recentFiles = recentManager.getRecentFiles(),
-            onRecentSelected = { path, name ->
-                File(path).readText().let { content -> openFile(name, path, content) }
+            recentProjects = appStateManager.getRecentProjects(),
+            recentFiles = appStateManager.getRecentFiles(),
+            onRecentProjectSelected = { selectedProjectPath ->
+                try {
+                    val projectDir = File(selectedProjectPath)
+                    if (!projectDir.exists() || !projectDir.isDirectory) {
+                        showSaveMessage("项目目录不存在")
+                        return@WelcomeScreen
+                    }
+                    
+                    projectPath = selectedProjectPath
+                    aiViewModel.setProjectPath(selectedProjectPath)
+                    appStateManager.projectPath = selectedProjectPath
+                    
+                    projectDir.listFiles()?.forEach { file ->
+                        if (file.isFile && (file.name.endsWith(".kt") || file.name.endsWith(".java") || file.name.endsWith(".xml") || file.name.endsWith(".py") || file.name.endsWith(".js") || file.name.endsWith(".json") || file.name.endsWith(".txt"))) {
+                            try {
+                                openFile(file.name, file.path, file.readText())
+                            } catch (_: Exception) {}
+                        }
+                    }
+                    showSidebar = true
+                } catch (_: Exception) {
+                    showSaveMessage("打开项目失败")
+                }
+            },
+            onRecentFileSelected = { path, name ->
+                try {
+                    File(path).readText().let { content -> openFile(name, path, content) }
+                } catch (_: Exception) {
+                    showSaveMessage("无法打开文件")
+                }
             }
         )
     } else {
@@ -284,14 +350,50 @@ fun MedeMiniApp() {
                                 .fillMaxSize()
                                 .background(AppSettings.editorBgColor)
                         ) {
-                            activeFile?.let { file ->
-                                CodeEditor(
-                                    editorFile = file, 
-                                    onContentChange = { newContent ->
-                                        openFiles = openFiles.map { if (it == file) it.copy(content = newContent) else it }
-                                    }, 
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                if (aiViewModel.reviewMode.value && activeFile != null && aiViewModel.pendingChanges.isNotEmpty()) {
+                                    Row(
+                                        modifier = Modifier
+                                            .height(22.dp)
+                                            .background(Color(0xFFF5F5F5))
+                                            .padding(horizontal = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "${aiViewModel.pendingChanges.size}",
+                                            color = Color(0xFF666666),
+                                            fontSize = 10.sp
+                                        )
+                                        IconButton(
+                                            onClick = { aiViewModel.rejectChanges() },
+                                            modifier = Modifier.size(18.dp)
+                                        ) {
+                                            Icon(Icons.Default.Close, "拒绝", tint = Color(0xFFE53935), modifier = Modifier.size(12.dp))
+                                        }
+                                        IconButton(
+                                            onClick = { aiViewModel.acceptChanges() },
+                                            modifier = Modifier.size(18.dp)
+                                        ) {
+                                            Icon(Icons.Default.Check, "接受", tint = Color(0xFF43A047), modifier = Modifier.size(12.dp))
+                                        }
+                                    }
+                                }
+                                
+                                activeFile?.let { file ->
+                                    CodeEditor(
+                                        editorFile = file,
+                                        onContentChange = { newContent ->
+                                            openFiles = openFiles.map { if (it == file) it.copy(content = newContent) else it }
+                                            appStateManager.saveEditorState(projectPath, file.path, file.name, newContent)
+                                        },
+                                        isReviewMode = aiViewModel.reviewMode.value && aiViewModel.currentReviewFilePath.value == file.path,
+                                        diffAnnotatedString = if (aiViewModel.reviewMode.value && aiViewModel.currentReviewFilePath.value == file.path) {
+                                            aiViewModel.getDiffAnnotatedString(file.path)
+                                        } else null,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
                             }
 
                             // AI面板覆盖在编辑器之上
@@ -425,7 +527,11 @@ fun MedeMiniApp() {
     if (showAISettings) {
         AISettingsDialog(
             config = aiViewModel.config.value,
-            onConfigChange = { aiViewModel.config.value = it; aiViewModel.initService() },
+            onConfigChange = { 
+                aiViewModel.config.value = it 
+                aiViewModel.initService()
+                appStateManager.saveAIConfig(it)
+            },
             onDismiss = { showAISettings = false }
         )
     }
@@ -548,56 +654,7 @@ private fun CommandItem(icon: androidx.compose.ui.graphics.vector.ImageVector, l
     }
 }
 
-@Composable
-private fun WelcomeScreen(
-    onOpenProject: () -> Unit, onOpenFile: () -> Unit,
-    recentFiles: List<RecentFile>, onRecentSelected: (String, String) -> Unit,
-    onOpenAI: () -> Unit
-) {
-    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
-    ) {
-        Box(modifier = Modifier.size(80.dp).border(3.dp, Color.Black, RoundedCornerShape(20.dp)), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.Code, null, modifier = Modifier.size(48.dp), tint = Color.Black)
-        }
-        Spacer(modifier = Modifier.height(24.dp))
-        Text("MedeMini", style = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.Black))
-        Text("Android Code Editor", style = TextStyle(fontSize = 14.sp, color = Color.Black.copy(0.6f)))
-        Spacer(modifier = Modifier.height(48.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = onOpenProject, colors = ButtonDefaults.buttonColors(containerColor = Color.Black), shape = RoundedCornerShape(12.dp), modifier = Modifier.height(52.dp)) {
-                Icon(Icons.Default.FolderOpen, null, modifier = Modifier.padding(end = 8.dp), tint = Color.White)
-                Text("打开项目", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Color.White)
-            }
-            OutlinedButton(onClick = onOpenFile, shape = RoundedCornerShape(12.dp), modifier = Modifier.height(52.dp), colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White, contentColor = Color.Black)) {
-                Icon(Icons.Default.Description, null, modifier = Modifier.padding(end = 8.dp))
-                Text("打开文件", fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            }
-            Button(onClick = onOpenAI, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6344CF)), shape = RoundedCornerShape(12.dp), modifier = Modifier.height(52.dp)) {
-                Icon(Icons.Default.SmartToy, null, modifier = Modifier.padding(end = 8.dp), tint = Color.White)
-                Text("AI助手", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Color.White)
-            }
-        }
-        if (recentFiles.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(48.dp))
-            Text("最近文件", style = TextStyle(fontSize = 16.sp, color = Color.Black, fontWeight = FontWeight.SemiBold))
-            Spacer(modifier = Modifier.height(16.dp))
-            LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(recentFiles.take(8), key = { it.path }) { file ->
-                    Card(modifier = Modifier.fillMaxWidth().clickable { onRecentSelected(file.path, file.name) }, colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(12.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(modifier = Modifier.size(40.dp).border(1.5.dp, Color.Black, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Description, null, tint = Color.Black, modifier = Modifier.size(22.dp))
-                            }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(file.name, style = TextStyle(fontSize = 15.sp, color = Color.Black), modifier = Modifier.weight(1f), maxLines = 1)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+
 
 @Composable
 private fun SettingsDialog(onDismiss: () -> Unit) {
