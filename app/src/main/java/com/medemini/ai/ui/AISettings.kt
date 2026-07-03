@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.medemini.ai.model.AIConfig
+import com.medemini.ai.model.BuiltInModel
 import com.medemini.ai.model.MCPService
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -27,7 +28,11 @@ import com.medemini.ai.model.MCPService
 fun AISettingsDialog(
     config: AIConfig,
     onConfigChange: (AIConfig) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    builtinModels: List<BuiltInModel> = emptyList(),
+    onSelectBuiltinModel: ((BuiltInModel) -> Unit)? = null,
+    remainingUses: (String) -> Int = { _ -> 0 },
+    dailyLimit: (String) -> Int = { _ -> 0 }
 ) {
     var settingsPage by remember { mutableStateOf("main") }
     var apiBaseUrl by remember { mutableStateOf(config.apiBaseUrl) }
@@ -60,6 +65,7 @@ fun AISettingsDialog(
         text = {
             when (settingsPage) {
                 "main" -> Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SettingsNavItem(Icons.Default.Bolt, "内置模型", subtitle = "使用内置的免费模型") { settingsPage = "builtin" }
                     SettingsNavItem(Icons.Default.Link, "API 配置", subtitle = "配置 API 链接和密钥") { settingsPage = "api" }
                     SettingsNavItem(Icons.Default.Tune, "AI 参数", subtitle = "温度、最大 Token 数") { settingsPage = "params" }
                     SettingsNavItem(Icons.Default.Info, "关于", subtitle = "MedeMini AI 助手 v1.0")
@@ -127,7 +133,36 @@ fun AISettingsDialog(
 
                     Text("提示: 请确保你的 API 地址和模型名称正确匹配", fontSize = 11.sp, color = Color(0xFF999999))
                 }
-                "params" -> Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                "builtin" -> Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (builtinModels.isEmpty()) {
+                            Text("暂无内置模型", fontSize = 13.sp, color = Color(0xFF999999))
+                        } else {
+                            builtinModels.forEach { model ->
+                                val remaining = remainingUses(model.displayName)
+                                val limit = dailyLimit(model.displayName)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .background(Color(0xFFFAFAFA))
+                                        .clickable {
+                                            onSelectBuiltinModel?.invoke(model)
+                                            onDismiss()
+                                        }
+                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Rocket, null, modifier = Modifier.size(22.dp), tint = Color(0xFF666666))
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(model.displayName, fontSize = 14.sp, color = Color.Black)
+                                        Text("${model.description} · 今日剩余 ${remaining}/${limit} 次", fontSize = 12.sp, color = Color(0xFF999999))
+                                    }
+                                    Icon(Icons.Default.ChevronRight, null, modifier = Modifier.size(18.dp), tint = Color(0xFFCCCCCC))
+                                }
+                            }
+                        }
+                        Text("提示: 选择内置模型后，将自动使用内置的 API 密钥，每日有调用次数限制", fontSize = 11.sp, color = Color(0xFF999999))
+                    }
+                    "params" -> Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     SettingSection("温度 (Temperature)") {
                         Column {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

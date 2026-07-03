@@ -533,7 +533,14 @@ fun MedeMiniApp() {
                 aiViewModel.initService()
                 appStateManager.saveAIConfig(it)
             },
-            onDismiss = { showAISettings = false }
+            onDismiss = { showAISettings = false },
+            builtinModels = modelProvider.getModels(),
+            onSelectBuiltinModel = { _ ->
+                aiViewModel.config.value = com.medemini.ai.model.AIConfig()
+                appStateManager.saveAIConfig(aiViewModel.config.value)
+            },
+            remainingUses = { modelProvider.getRemainingUses(it) },
+            dailyLimit = { modelProvider.getDailyLimitForModel(it) }
         )
     }
 
