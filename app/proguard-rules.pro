@@ -12,10 +12,6 @@
     native <methods>;
 }
 
-# Keep SecureKeyStore - 保护 API Key
--keep class com.medemini.ai.native.SecureKeyStore { *; }
--dontwarn com.medemini.ai.native.SecureKeyStore
-
 # Keep AI API service
 -keep interface com.medemini.ai.api.AIService { *; }
 
