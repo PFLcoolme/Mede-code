@@ -7,6 +7,15 @@ android {
     namespace = "com.medemini"
     compileSdk = 34
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("/home/cool/项目/Medecode/keystore/medemini.jks")
+            storePassword = "medecode123"
+            keyAlias = "medemini"
+            keyPassword = "medecode123"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.medemini"
         minSdk = 26
@@ -23,6 +32,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
