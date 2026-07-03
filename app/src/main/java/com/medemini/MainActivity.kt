@@ -37,22 +37,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.medemini.ai.ui.AIAssistantPanel
-import com.medemini.ai.ui.AISettingsDialog
-import com.medemini.ai.viewmodel.AIViewModel
 import com.medemini.editor.CodeEditor
 import com.medemini.editor.SyntaxHighlight
 import com.medemini.model.EditorFile
 import com.medemini.ui.*
 import com.medemini.ui.theme.MedeMiniTheme
-// import org.jetbrains.compose.ui.tooling.preview.Preview
 import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // 请求所有文件访问权限（Android 11+）
         requestStoragePermission()
         setContent {
             MedeMiniTheme {
@@ -98,14 +93,11 @@ object AppSettings {
 @Composable
 fun MedeMiniApp() {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val aiViewModel = remember { AIViewModel(context.applicationContext as android.app.Application) }
     
     var openFiles by remember { mutableStateOf<List<EditorFile>>(emptyList()) }
     var activeFileIndex by remember { mutableStateOf(-1) }
     var showSidebar by remember { mutableStateOf(false) }
-    var showAIChat by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
-    var showAISettings by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showCommandPalette by remember { mutableStateOf(false) }
     var projectPath by remember { mutableStateOf("") }
@@ -120,11 +112,6 @@ fun MedeMiniApp() {
 
     val recentManager = rememberRecentFileManager()
     val activeFile = if (activeFileIndex >= 0 && activeFileIndex < openFiles.size) openFiles[activeFileIndex] else null
-
-    // 同步 AI 聊天显示状态
-    LaunchedEffect(aiViewModel.showAIChat.value) {
-        aiViewModel.showAIChat.collect { showAIChat = it }
-    }
 
     fun openFile(name: String, path: String, content: String) {
         val editorFile = EditorFile(name = name, path = path, content = content)
@@ -150,11 +137,8 @@ fun MedeMiniApp() {
     val projectLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.let { treeUri ->
             try {
-                // 获取物理路径用于文件树浏览
                 val path = treeUri.path
-                // 尝试从URI提取真实路径
                 val realPath = try {
-                    // /tree/primary:xxx -> /storage/emulated/0/xxx
                     val segments = path?.split(":")
                     if (segments != null && segments.size >= 2) {
                         "/storage/emulated/0/${segments.last()}"
@@ -163,7 +147,6 @@ fun MedeMiniApp() {
                 projectPath = realPath
                 showSidebar = true
 
-                // 同时打开目录中的文本文件
                 val treeDocId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
                 val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeDocId)
                 val cursor = context.contentResolver.query(childrenUri, null, null, null, null)
@@ -254,19 +237,9 @@ fun MedeMiniApp() {
                             }
                         }
                     }
-                
-                    // AI 助手面板（覆盖在编辑器上方，实现半透明效果）
-                    if (showAIChat) {
-                        AIAssistantPanel(
-                            viewModel = aiViewModel,
-                            currentFileContent = activeFile?.content,
-                            currentFilePath = activeFile?.path,
-                            onShowSettings = { showAISettings = true }
-                        )
-                    }
                 }
             
-                // 底部标签栏和 AI 切换按钮
+                // 底部标签栏
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     FluidTabBar(
                         openFiles = openFiles, 
@@ -297,25 +270,6 @@ fun MedeMiniApp() {
                             tint = Color.White
                         )
                     }
-                
-                    Spacer(modifier = Modifier.width(6.dp))
-                
-                    // AI 切换按钮
-                    Box(
-                        modifier = Modifier
-                            .size(26.dp)
-                            .clip(RoundedCornerShape(13.dp))
-                            .background(if (showAIChat) Color(0xFF6344CF) else Color(0xFF333333).copy(alpha = 0.8f))
-                            .clickable { showAIChat = !showAIChat },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.AutoFixHigh, 
-                            "AI助手", 
-                            modifier = Modifier.size(14.dp), 
-                            tint = Color.White
-                        )
-                    }
                 }
             }
 
@@ -330,7 +284,6 @@ fun MedeMiniApp() {
                     DropdownMenuItem(text = { Text("另存为...", fontSize = 13.sp) }, onClick = { showMenu = false; activeFile?.let { saveFileLauncher.launch(it.name) } })
                     Divider()
                     DropdownMenuItem(text = { Text(if (showSidebar) "隐藏侧边栏" else "显示侧边栏", fontSize = 13.sp) }, onClick = { showMenu = false; showSidebar = !showSidebar })
-                    DropdownMenuItem(text = { Text(if (showAIChat) "隐藏 AI" else "显示 AI", fontSize = 13.sp) }, onClick = { showMenu = false; showAIChat = !showAIChat })
                     DropdownMenuItem(text = { Text("设置", fontSize = 13.sp) }, onClick = { showMenu = false; showSettings = true })
                     Divider()
                     DropdownMenuItem(text = { Text("关闭文件", fontSize = 13.sp) }, onClick = {
@@ -356,15 +309,8 @@ fun MedeMiniApp() {
         )
     }
 
-            if (showSettings) {
+    if (showSettings) {
         SettingsDialog(onDismiss = { showSettings = false })
-    }
-    
-    if (showAISettings) {
-        AISettingsDialog(
-            viewModel = aiViewModel,
-            onDismiss = { showAISettings = false }
-        )
     }
 }
 
@@ -466,7 +412,8 @@ private fun CommandPaletteDialog(
 
 @Composable
 private fun CommandItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
+    Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+        .let { if (onClick != null) it.clickable { onClick() } else it }
         .background(Color(0xFFF5F5F5)).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
