@@ -17,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,11 +33,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.medemini.ai.ui.AISettingsDialog
+import com.medemini.ai.ui.CodeReviewPanel
+import com.medemini.ai.ui.FloatingAIAssistant
+import com.medemini.ai.viewmodel.AIViewModel
 import com.medemini.editor.CodeEditor
 import com.medemini.editor.SyntaxHighlight
 import com.medemini.model.EditorFile
@@ -97,10 +103,14 @@ fun MedeMiniApp() {
     var openFiles by remember { mutableStateOf<List<EditorFile>>(emptyList()) }
     var activeFileIndex by remember { mutableStateOf(-1) }
     var showSidebar by remember { mutableStateOf(false) }
+    var showAIPanel by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showAISettings by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showCommandPalette by remember { mutableStateOf(false) }
     var projectPath by remember { mutableStateOf("") }
+
+    val aiViewModel = remember { AIViewModel() }
 
     // 同步高亮配色
     LaunchedEffect(AppSettings.keywordColor) { SyntaxHighlight.keywordColor = AppSettings.keywordColor }
@@ -172,14 +182,50 @@ fun MedeMiniApp() {
         }
     }
 
+    var saveMessage by remember { mutableStateOf<String?>(null) }
+
+    fun showSaveMessage(message: String) {
+        saveMessage = message
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            saveMessage = null
+        }, 2000)
+    }
+
     val saveFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/*")) { uri ->
-        uri?.let {
-            activeFile?.let { file ->
-                try {
-                    context.contentResolver.openOutputStream(it)?.use { outputStream -> outputStream.write(file.content.toByteArray()) }
-                } catch (_: Exception) {}
-            }
+        try {
+            uri?.let { contentUri ->
+                activeFile?.let { file ->
+                    try {
+                        context.contentResolver.openOutputStream(contentUri)?.use { outputStream ->
+                            outputStream.write(file.content.toByteArray())
+                        }
+                        showSaveMessage("保存成功")
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        showSaveMessage("保存失败: ${e.message}")
+                    }
+                } ?: run { showSaveMessage("没有打开的文件") }
+            } ?: run { saveMessage = null }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            showSaveMessage("保存失败: ${e.message}")
         }
+    }
+
+    fun performSave() {
+        activeFile?.let { file ->
+            if (file.path.isNotEmpty() && File(file.path).exists()) {
+                try {
+                    File(file.path).writeText(file.content)
+                    showSaveMessage("保存成功")
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    showSaveMessage("保存失败: ${e.message}")
+                }
+            } else {
+                saveFileLauncher.launch(file.name)
+            }
+        } ?: run { showSaveMessage("没有打开的文件") }
     }
 
     if (openFiles.isEmpty()) {
@@ -202,8 +248,20 @@ fun MedeMiniApp() {
                         onLongPress = { showCommandPalette = !showCommandPalette }
                     )
                 }
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onHorizontalDrag = { _, dragAmount ->
+                            if (dragAmount > 50) {
+                                showAIPanel = true
+                            } else if (dragAmount < -50) {
+                                showAIPanel = false
+                            }
+                        }
+                    )
+                }
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
+                TopStatusBar(file = activeFile)
                 // 主内容区域
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     // 文件浏览器侧边栏和编辑器的容器
@@ -219,7 +277,7 @@ fun MedeMiniApp() {
                             )
                         }
                     
-                        // 编辑器主区域
+                        // 编辑器主区域 + AI面板覆盖层
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -233,6 +291,16 @@ fun MedeMiniApp() {
                                         openFiles = openFiles.map { if (it == file) it.copy(content = newContent) else it }
                                     }, 
                                     modifier = Modifier.fillMaxSize()
+                                )
+                            }
+
+                            // AI面板覆盖在编辑器之上
+                            Box(modifier = Modifier.align(Alignment.CenterEnd)) {
+                                FloatingAIAssistant(
+                                    viewModel = aiViewModel,
+                                    isOpen = showAIPanel,
+                                    onToggle = { showAIPanel = !showAIPanel },
+                                    onSettings = { showAISettings = true }
                                 )
                             }
                         }
@@ -254,6 +322,39 @@ fun MedeMiniApp() {
                 
                     Spacer(modifier = Modifier.weight(1f))
                 
+                    // 保存按钮
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .clip(RoundedCornerShape(13.dp))
+                            .background(Color(0xFFE0E0E0))
+                            .clickable { performSave() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Save, "保存", modifier = Modifier.size(14.dp), tint = Color(0xFF666666))
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // AI 助手切换按钮
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(if (showAIPanel) Color(0xFF1A1A1A) else Color(0xFFE0E0E0))
+                            .clickable { showAIPanel = !showAIPanel },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.SmartToy, 
+                            "AI助手", 
+                            modifier = Modifier.size(16.dp), 
+                            tint = if (showAIPanel) Color.White else Color(0xFF666666)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
                     // 侧边栏切换按钮
                     Box(
                         modifier = Modifier
@@ -263,11 +364,19 @@ fun MedeMiniApp() {
                             .clickable { showSidebar = !showSidebar },
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            Icons.Default.Menu, 
-                            "侧边栏", 
-                            modifier = Modifier.size(14.dp), 
-                            tint = Color.White
+                        Icon(Icons.Default.Menu, "侧边栏", modifier = Modifier.size(14.dp), tint = Color.White)
+                    }
+                }
+
+                // 保存消息提示
+                if (saveMessage != null) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            saveMessage!!,
+                            style = TextStyle(fontSize = 12.sp, color = if (saveMessage == "保存成功") Color(0xFF333333) else Color(0xFFCC0000))
                         )
                     }
                 }
@@ -280,7 +389,7 @@ fun MedeMiniApp() {
                     DropdownMenuItem(text = { Text("打开文件...", fontSize = 13.sp) }, onClick = { showMenu = false; fileLauncher.launch(arrayOf("text/*")) })
                     DropdownMenuItem(text = { Text("打开项目...", fontSize = 13.sp) }, onClick = { showMenu = false; projectLauncher.launch(null) })
                     Divider()
-                    DropdownMenuItem(text = { Text("保存", fontSize = 13.sp) }, onClick = { showMenu = false; activeFile?.let { saveFileLauncher.launch(it.name) } })
+                    DropdownMenuItem(text = { Text("保存", fontSize = 13.sp) }, onClick = { showMenu = false; performSave() })
                     DropdownMenuItem(text = { Text("另存为...", fontSize = 13.sp) }, onClick = { showMenu = false; activeFile?.let { saveFileLauncher.launch(it.name) } })
                     Divider()
                     DropdownMenuItem(text = { Text(if (showSidebar) "隐藏侧边栏" else "显示侧边栏", fontSize = 13.sp) }, onClick = { showMenu = false; showSidebar = !showSidebar })
@@ -305,12 +414,28 @@ fun MedeMiniApp() {
             onOpenProject = { showCommandPalette = false; projectLauncher.launch(null) },
             onToggleSidebar = { showCommandPalette = false; showSidebar = !showSidebar },
             onSettings = { showCommandPalette = false; showSettings = true },
-            onSave = { showCommandPalette = false; activeFile?.let { saveFileLauncher.launch(it.name) } }
+            onSave = { showCommandPalette = false; performSave() }
         )
     }
 
     if (showSettings) {
         SettingsDialog(onDismiss = { showSettings = false })
+    }
+
+    if (showAISettings) {
+        AISettingsDialog(
+            config = aiViewModel.config.value,
+            onConfigChange = { aiViewModel.config.value = it; aiViewModel.initService() },
+            onDismiss = { showAISettings = false }
+        )
+    }
+
+    if (aiViewModel.showReviewPanel.value && aiViewModel.pendingChanges.isNotEmpty()) {
+        CodeReviewPanel(
+            changes = aiViewModel.pendingChanges,
+            onAccept = { aiViewModel.acceptChanges() },
+            onReject = { aiViewModel.rejectChanges() }
+        )
     }
 }
 
@@ -426,7 +551,8 @@ private fun CommandItem(icon: androidx.compose.ui.graphics.vector.ImageVector, l
 @Composable
 private fun WelcomeScreen(
     onOpenProject: () -> Unit, onOpenFile: () -> Unit,
-    recentFiles: List<RecentFile>, onRecentSelected: (String, String) -> Unit
+    recentFiles: List<RecentFile>, onRecentSelected: (String, String) -> Unit,
+    onOpenAI: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
@@ -438,7 +564,7 @@ private fun WelcomeScreen(
         Text("MedeMini", style = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.Black))
         Text("Android Code Editor", style = TextStyle(fontSize = 14.sp, color = Color.Black.copy(0.6f)))
         Spacer(modifier = Modifier.height(48.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Button(onClick = onOpenProject, colors = ButtonDefaults.buttonColors(containerColor = Color.Black), shape = RoundedCornerShape(12.dp), modifier = Modifier.height(52.dp)) {
                 Icon(Icons.Default.FolderOpen, null, modifier = Modifier.padding(end = 8.dp), tint = Color.White)
                 Text("打开项目", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Color.White)
@@ -446,6 +572,10 @@ private fun WelcomeScreen(
             OutlinedButton(onClick = onOpenFile, shape = RoundedCornerShape(12.dp), modifier = Modifier.height(52.dp), colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White, contentColor = Color.Black)) {
                 Icon(Icons.Default.Description, null, modifier = Modifier.padding(end = 8.dp))
                 Text("打开文件", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            }
+            Button(onClick = onOpenAI, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6344CF)), shape = RoundedCornerShape(12.dp), modifier = Modifier.height(52.dp)) {
+                Icon(Icons.Default.SmartToy, null, modifier = Modifier.padding(end = 8.dp), tint = Color.White)
+                Text("AI助手", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Color.White)
             }
         }
         if (recentFiles.isNotEmpty()) {
