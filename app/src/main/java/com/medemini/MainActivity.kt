@@ -111,7 +111,12 @@ fun MedeMiniApp() {
     var projectPath by remember { mutableStateOf("") }
 
     val aiViewModel = remember { AIViewModel() }
+    val modelProvider = remember { com.medemini.ai.provider.DefaultModelProvider(context) }
     val appStateManager = remember { AppStateManager(context) }
+    
+    LaunchedEffect(Unit) {
+        aiViewModel.modelProvider = modelProvider
+    }
 
     // 同步高亮配色
     LaunchedEffect(AppSettings.keywordColor) { SyntaxHighlight.keywordColor = AppSettings.keywordColor }
@@ -387,10 +392,6 @@ fun MedeMiniApp() {
                                             openFiles = openFiles.map { if (it == file) it.copy(content = newContent) else it }
                                             appStateManager.saveEditorState(projectPath, file.path, file.name, newContent)
                                         },
-                                        isReviewMode = aiViewModel.reviewMode.value && aiViewModel.currentReviewFilePath.value == file.path,
-                                        diffAnnotatedString = if (aiViewModel.reviewMode.value && aiViewModel.currentReviewFilePath.value == file.path) {
-                                            aiViewModel.getDiffAnnotatedString(file.path)
-                                        } else null,
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 }

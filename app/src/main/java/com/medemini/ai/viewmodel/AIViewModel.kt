@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import com.medemini.ai.api.*
 import com.medemini.ai.model.*
+import com.medemini.ai.provider.DefaultModelProvider
 import com.medemini.model.EditorFile
 import retrofit2.Call
 import retrofit2.Retrofit
@@ -125,6 +126,7 @@ class AIViewModel : ViewModel() {
     private lateinit var aiService: AIService
     private var currentEditorFile: EditorFile? = null
     private var projectPath: String = ""
+    var modelProvider: DefaultModelProvider? = null
 
     fun setCurrentFile(file: EditorFile?) {
         currentEditorFile = file
@@ -144,8 +146,27 @@ class AIViewModel : ViewModel() {
 
     fun sendMessage(userMessage: String) {
         if (config.value.apiKey.isEmpty()) {
-            addSystemMessage("请先在设置中配置API Key")
-            return
+            val provider = modelProvider ?: run {
+                addSystemMessage("请先在设置中配置API Key")
+                return
+            }
+            val builtinModel = provider.getModelByName("Qwen3.5-397B-A17B")
+            if (builtinModel != null && provider.canUseModel("Qwen3.5-397B-A17B")) {
+                config.value = AIConfig(
+                    apiKey = builtinModel.apiKey,
+                    apiBaseUrl = builtinModel.endpoint,
+                    model = builtinModel.name,
+                    temperature = 0.7f,
+                    maxTokens = 4096
+                )
+                initService()
+            } else if (builtinModel != null) {
+                addSystemMessage("今日内置模型调用次数已用完（每日${provider.getDailyLimitForModel("Qwen3.5-397B-A17B")}次），请配置自己的API Key")
+                return
+            } else {
+                addSystemMessage("请先在设置中配置API Key")
+                return
+            }
         }
 
         if (!::aiService.isInitialized) {
